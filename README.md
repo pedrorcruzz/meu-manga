@@ -44,7 +44,7 @@ Testado principalmente no macOS; feedback de Linux e Windows é bem-vindo. No Wi
 versões recentes do Chrome com *app-bound encryption* podem não funcionar; nesse caso
 use outro navegador Chromium, como Brave ou Edge.
 
-### Instalação
+### 1. Instalação
 
 No terminal, clone o projeto, entre na pasta e instale as dependências:
 
@@ -54,7 +54,7 @@ cd meu-manga
 make install
 ```
 
-### Como usar
+### 2. Como usar
 
 No terminal, dentro da pasta do projeto, rode:
 
@@ -76,7 +76,7 @@ Downloads/
             └── ...
 ```
 
-### Comandos
+### 3. Comandos
 
 | Comando          | O que faz                                                        |
 |------------------|------------------------------------------------------------------|
@@ -91,7 +91,7 @@ ou clicando no botão **Encerrar** no canto superior direito do app. Os dois des
 backend e o frontend e liberam as portas 8080 e 3000.
 
 <details open>
-<summary>🔌 <strong>Conectores</strong></summary>
+<summary>🔌 <strong>4. Conectores</strong></summary>
 
 <br>
 
