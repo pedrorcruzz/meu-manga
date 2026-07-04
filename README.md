@@ -90,10 +90,7 @@ Downloads/
 ou clicando no botão **Encerrar** no canto superior direito do app. Os dois desligam o
 backend e o frontend e liberam as portas 8080 e 3000.
 
-<details open>
-<summary><h3>4. Conectores</h3></summary>
-
-<br>
+### 4. Conectores
 
 O Meu Mangá busca os mangás através de conectores. Cada site é um conector.
 
@@ -110,8 +107,6 @@ isso (tem um botão no aviso).
 
 Ao baixar muitos capítulos, o site pode pedir um captcha do leitor. O app avisa qual
 capítulo precisa; é só abrir ele no navegador e resolver.
-
-</details>
 
 </details>
 
