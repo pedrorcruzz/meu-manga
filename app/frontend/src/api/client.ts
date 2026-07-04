@@ -23,9 +23,24 @@ export interface SessionInfo {
   detail: string
 }
 
+/**
+ * Bloqueio temporário do site (rate-limit por "atividade incomum na rede").
+ * Diferente do Cloudflare: não há desafio a resolver, só esperar até `rawTime`.
+ */
+export interface BlockInfo {
+  active: boolean
+  /** Instante de liberação em ISO-8601. */
+  until: string
+  /** Horário como o site exibe, ex.: "22:14 GMT-3". */
+  rawTime: string
+  /** Mensagem pronta em pt-BR. */
+  message: string
+}
+
 export interface Health {
   status: string
   session: SessionInfo
+  block: BlockInfo | null
 }
 
 export interface SearchResult {
@@ -85,6 +100,8 @@ export interface JobSummary {
   status: JobStatus
   totalChapters: number
   completedChapters: number
+  /** Data de criação em ISO-8601 (histórico). */
+  createdAt?: string
 }
 
 export interface ChapterTask {
@@ -169,9 +186,19 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (res.status === 424) throw new NoSessionError()
   if (!res.ok) {
+    // o backend responde { "error": "mensagem" }; extrai a mensagem limpa
     const text = await res.text().catch(() => '')
-    throw new Error(text || `${res.status} ${res.statusText}`)
+    let msg = text
+    try {
+      const parsed = JSON.parse(text) as { error?: string }
+      if (parsed.error) msg = parsed.error
+    } catch {
+      // corpo não-JSON: usa o texto cru
+    }
+    throw new Error(msg || `${res.status} ${res.statusText}`)
   }
+  // 204 No Content não tem corpo
+  if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
 
@@ -193,6 +220,16 @@ export const api = {
     }),
   cancelJob: (id: string) =>
     req<void>(`/downloads/${id}`, { method: 'DELETE' }),
+  /** Re-enfileira apenas os capítulos que faltaram de um job. */
+  retryJob: (id: string) =>
+    req<{ jobId: string }>(`/downloads/${encodeURIComponent(id)}/retry`, {
+      method: 'POST',
+    }),
+  /** Remove um job do histórico (cancela antes, se estiver rodando). */
+  removeJob: (id: string) =>
+    req<void>(`/downloads/${encodeURIComponent(id)}/remove`, {
+      method: 'POST',
+    }),
   getSettings: () => req<Settings>('/settings'),
   updateSettings: (body: Partial<Settings>) =>
     req<Settings>('/settings', {

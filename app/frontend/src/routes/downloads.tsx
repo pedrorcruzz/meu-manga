@@ -9,6 +9,8 @@ import {
   Eye,
   FolderOpen,
   Loader2,
+  RotateCcw,
+  Trash2,
   X,
   XCircle,
 } from 'lucide-react'
@@ -77,7 +79,39 @@ function DownloadsPage() {
     setListTick((t) => t + 1)
   }
 
+  // Refaz só os capítulos que faltaram (novo job). Não perde o que já baixou.
+  async function retry(id: string) {
+    try {
+      await api.retryJob(id)
+    } catch (err) {
+      if (err instanceof NoSessionError) refreshSession()
+    }
+    setListTick((t) => t + 1)
+  }
+
+  // Remove do histórico. Os arquivos já salvos no disco não são apagados.
+  async function remove(id: string) {
+    const ok = window.confirm(
+      'Remover este download do histórico?\n\n' +
+        'Os capítulos já baixados no disco NÃO são apagados — isto só limpa a ' +
+        'entrada aqui da lista.',
+    )
+    if (!ok) return
+    try {
+      await api.removeJob(id)
+    } catch {
+      // ignora: a lista é atualizada a seguir de qualquer forma
+    }
+    setListTick((t) => t + 1)
+  }
+
   const failedJobs = list.filter((j) => j.status === 'failed')
+  // downloads finalizados mas incompletos (faltam capítulos para refazer)
+  const incompleteJobs = list.filter(
+    (j) =>
+      (j.status === 'failed' || j.status === 'canceled') &&
+      j.totalChapters - j.completedChapters > 0,
+  )
   const activeCount = list.filter(
     (j) => j.status === 'running' || j.status === 'queued',
   ).length
@@ -122,6 +156,11 @@ function DownloadsPage() {
             onFilterChange={setFilter}
           />
 
+          {/* Aviso: downloads incompletos que dá para refazer sem perder nada */}
+          {incompleteJobs.length > 0 && (
+            <IncompleteNotice count={incompleteJobs.length} />
+          )}
+
           {/* Alertas de captcha do leitor */}
           {failedJobs.map((job) => (
             <CaptchaJobAlert
@@ -146,6 +185,8 @@ function DownloadsPage() {
                   jobProgress={progressMap[job.jobId] ?? {}}
                   listTick={listTick}
                   onCancel={() => void cancel(job.jobId)}
+                  onRetry={() => void retry(job.jobId)}
+                  onRemove={() => void remove(job.jobId)}
                 />
               ))
             )}
@@ -174,12 +215,38 @@ function EmptyState() {
   )
 }
 
+// ── Aviso de downloads incompletos ────────────────────────────────────────────
+
+function IncompleteNotice({ count }: { count: number }) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-xl border border-amber-700/30 bg-amber-950/20 p-4">
+      <RotateCcw
+        size={14}
+        className="mt-0.5 shrink-0 text-amber-400"
+        aria-hidden="true"
+      />
+      <div className="space-y-1">
+        <p className="font-mono text-xs font-semibold uppercase tracking-wide text-amber-300">
+          {count} download{count !== 1 ? 's' : ''} incompleto
+          {count !== 1 ? 's' : ''}
+        </p>
+        <p className="text-xs leading-relaxed text-amber-200/70">
+          Alguns capítulos não terminaram (bloqueio do site, sessão ou rede). O
+          que já baixou está salvo no disco. Use{' '}
+          <span className="font-semibold">Refazer o que faltou</span> no card
+          para baixar só os capítulos restantes — sem repetir os concluídos.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ── Cabeçalho do dashboard (contagem + filtros) ───────────────────────────────
 
 const FILTER_LABELS: Record<FilterMode, string> = {
   all: 'Todos',
   active: 'Ativos',
-  done: 'Finalizados',
+  done: 'Histórico',
 }
 
 function DashboardHeader({
@@ -434,9 +501,18 @@ interface JobCardProps {
   jobProgress: Record<string, ChapterProgress>
   listTick: number
   onCancel: () => void
+  onRetry: () => void
+  onRemove: () => void
 }
 
-function JobCard({ job, jobProgress, listTick, onCancel }: JobCardProps) {
+function JobCard({
+  job,
+  jobProgress,
+  listTick,
+  onCancel,
+  onRetry,
+  onRemove,
+}: JobCardProps) {
   const [expanded, setExpanded] = useState(false)
 
   const { data: detail } = useAsync(
@@ -449,6 +525,8 @@ function JobCard({ job, jobProgress, listTick, onCancel }: JobCardProps) {
       ? (job.completedChapters / job.totalChapters) * 100
       : 0
   const active = job.status === 'running' || job.status === 'queued'
+  const missing = job.totalChapters - job.completedChapters
+  const canRetry = !active && missing > 0
 
   const cardBorderClass =
     job.status === 'running'
@@ -500,6 +578,19 @@ function JobCard({ job, jobProgress, listTick, onCancel }: JobCardProps) {
             <span className="font-mono text-[11px] text-neutral-500">
               {job.completedChapters}/{job.totalChapters} cap.
             </span>
+            {canRetry && (
+              <>
+                <span
+                  className="font-mono text-[11px] text-neutral-700"
+                  aria-hidden="true"
+                >
+                  ·
+                </span>
+                <span className="font-mono text-[11px] text-amber-400/90">
+                  faltam {missing}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -529,7 +620,7 @@ function JobCard({ job, jobProgress, listTick, onCancel }: JobCardProps) {
           onClick={(e) => e.stopPropagation()}
           role="none"
         >
-          {active && (
+          {active ? (
             <button
               type="button"
               onClick={onCancel}
@@ -539,6 +630,29 @@ function JobCard({ job, jobProgress, listTick, onCancel }: JobCardProps) {
               <X size={11} aria-hidden="true" />
               Cancelar
             </button>
+          ) : (
+            <>
+              {canRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  aria-label={`Refazer os capítulos que faltaram de ${job.title}`}
+                  className="flex items-center gap-1 rounded border border-amber-800/60 px-2 py-1 font-mono text-[11px] text-amber-300 transition-colors hover:bg-amber-950/40"
+                >
+                  <RotateCcw size={11} aria-hidden="true" />
+                  Refazer o que faltou
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onRemove}
+                aria-label={`Remover ${job.title} do histórico`}
+                className="flex items-center gap-1 rounded border border-neutral-700 px-2 py-1 font-mono text-[11px] text-neutral-400 transition-colors hover:bg-neutral-800"
+              >
+                <Trash2 size={11} aria-hidden="true" />
+                Remover
+              </button>
+            </>
           )}
           <span className="text-neutral-600" aria-hidden="true">
             {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}

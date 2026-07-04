@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router'
 import * as React from 'react'
 import { Download } from 'lucide-react'
+import { BlockBanner } from '~/components/BlockBanner'
 import { CloudflareBanner } from '~/components/CloudflareBanner'
 import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary'
 import { NotFound } from '~/components/NotFound'
@@ -44,6 +45,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body className="flex min-h-screen flex-col bg-neutral-950 text-neutral-100">
         <SessionProvider>
+          <BlockBanner />
           <CloudflareBanner />
           <header className="border-b border-neutral-800/60 bg-neutral-950/80 backdrop-blur-sm">
             <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2">

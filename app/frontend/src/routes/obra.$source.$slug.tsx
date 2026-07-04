@@ -143,6 +143,19 @@ function ObraPage() {
         </div>
       )
     }
+    if (error?.startsWith('bloqueio temporário')) {
+      return (
+        <div className="space-y-2 rounded-xl border border-rose-800/50 bg-rose-950/40 px-5 py-4 text-sm text-rose-200">
+          <p className="font-semibold text-rose-200">
+            Bloqueio temporário do site (não é o Cloudflare)
+          </p>
+          <p className="text-rose-200/80">{error}</p>
+          <p className="text-xs text-rose-300/60">
+            Espere o horário indicado — tentar agora só prolonga o bloqueio.
+          </p>
+        </div>
+      )
+    }
     return (
       <div className="rounded-xl bg-red-950/60 px-5 py-4 text-sm text-red-400">
         {error}

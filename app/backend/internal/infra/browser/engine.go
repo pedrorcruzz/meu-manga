@@ -115,7 +115,9 @@ func (p *Page) Close() { _ = p.rod.Close() }
 
 var challengeTitle = []string{"just a moment", "um momento", "attention required", "checking"}
 
-// Goto navigates and waits until the Cloudflare interstitial is gone.
+// Goto navigates and waits until the Cloudflare interstitial is gone. Se a
+// página carregada for a tela de bloqueio por atividade incomum, devolve um
+// *domain.BlockedError com o horário de liberação.
 func (p *Page) Goto(ctx context.Context, url string) error {
 	if err := p.rod.Navigate(url); err != nil {
 		return err
@@ -129,12 +131,29 @@ func (p *Page) Goto(ctx context.Context, url string) error {
 		if err == nil {
 			t := strings.ToLower(info.Title)
 			if t != "" && t != "about:blank" && !anyContains(t, challengeTitle) {
+				if blk := p.detectBlock(); blk != nil {
+					return blk
+				}
 				return nil
 			}
 		}
 		time.Sleep(time.Second)
 	}
 	return fmt.Errorf("cloudflare challenge did not clear for %s", url)
+}
+
+// detectBlock lê o texto visível da página e devolve um *domain.BlockedError se
+// for a tela de bloqueio anti-abuso do site. Falhas de leitura viram nil (não é
+// bloqueio), deixando o fluxo normal seguir.
+func (p *Page) detectBlock() error {
+	res, err := p.rod.Eval(`() => document.body ? document.body.innerText : ''`)
+	if err != nil {
+		return nil
+	}
+	if be := domain.ParseBlock(res.Value.String(), time.Now()); be != nil {
+		return be
+	}
+	return nil
 }
 
 // Scroll scrolls the page down to trigger lazy loading.

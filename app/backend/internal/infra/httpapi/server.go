@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"meumanga/internal/domain"
 	"meumanga/internal/infra/imageconv"
@@ -23,6 +24,8 @@ type Deps struct {
 	Previewer *usecase.Previewer
 	Session   domain.SessionProvider
 	Host      string
+	// Gate expõe o bloqueio temporário do site (rate-limit) para o /health.
+	Gate *domain.RateGate
 	// Probe faz uma requisição real leve para checar se a sessão passa o Cloudflare.
 	Probe func(ctx context.Context) bool
 	// Quit encerra o programa (backend + frontend), liberando as portas.
@@ -63,6 +66,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/downloads", s.listJobs)
 	s.mux.HandleFunc("GET /api/downloads/{id}", s.getJob)
 	s.mux.HandleFunc("DELETE /api/downloads/{id}", s.cancelJob)
+	s.mux.HandleFunc("POST /api/downloads/{id}/retry", s.retryJob)
+	s.mux.HandleFunc("POST /api/downloads/{id}/remove", s.removeJob)
 	s.mux.HandleFunc("GET /api/settings", s.getSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.putSettings)
 	s.mux.HandleFunc("POST /api/settings/pick-folder", s.pickFolder)
@@ -165,7 +170,26 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 			"source": s.deps.Host,
 			"detail": detail,
 		},
+		"block": s.blockStatus(),
 	})
+}
+
+// blockStatus descreve o bloqueio temporário ativo (rate-limit do site), ou nil.
+// É distinto da sessão Cloudflare: aqui não há desafio a resolver, só esperar.
+func (s *Server) blockStatus() any {
+	if s.deps.Gate == nil {
+		return nil
+	}
+	be := s.deps.Gate.Blocked(time.Now())
+	if be == nil {
+		return nil
+	}
+	return map[string]any{
+		"active":  true,
+		"until":   be.Until.Format(time.RFC3339),
+		"rawTime": be.RawTime,
+		"message": be.Error(),
+	}
 }
 
 func (s *Server) sources(w http.ResponseWriter, r *http.Request) {
@@ -287,6 +311,25 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// retryJob re-enfileira apenas os capítulos que faltaram de um job.
+func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
+	id, err := s.deps.Downloads.Retry(r.PathValue("id"))
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": id})
+}
+
+// removeJob apaga um job do histórico (cancela antes, se estiver rodando).
+func (s *Server) removeJob(w http.ResponseWriter, r *http.Request) {
+	if err := s.deps.Downloads.Remove(r.PathValue("id")); err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"downloadDir": s.deps.Settings.DownloadDir()})
 }
@@ -345,11 +388,18 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeUseErr(w http.ResponseWriter, err error) {
+	// bloqueio temporário do site (atividade incomum): 503, distinto do 424 do CF
+	if _, ok := domain.AsBlocked(err); ok {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	switch {
 	case errors.Is(err, domain.ErrSourceNotFound),
 		errors.Is(err, domain.ErrJobNotFound),
 		errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, domain.ErrNothingToRetry):
+		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, domain.ErrNoSession):
 		writeError(w, http.StatusFailedDependency, err.Error())
 	default:

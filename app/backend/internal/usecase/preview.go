@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"meumanga/internal/domain"
 )
@@ -35,6 +36,7 @@ type previewKey struct {
 type Previewer struct {
 	reg   SourceRegistry
 	thumb Thumbnailer
+	gate  *domain.RateGate // nil = sem gate de rate-limit
 
 	mu    sync.Mutex
 	cache map[previewKey][]string // cache evita requisições repetidas ao browser
@@ -50,6 +52,9 @@ func NewPreviewer(reg SourceRegistry, thumb Thumbnailer) *Previewer {
 	}
 }
 
+// SetGate liga o Previewer ao RateGate compartilhado.
+func (p *Previewer) SetGate(g *domain.RateGate) { p.gate = g }
+
 // Preview returns up to count thumbnail data-URLs for the first pages of ch.
 // count defaults to previewDefaultCount when ≤0 and is capped at previewMaxCount.
 func (p *Previewer) Preview(ctx context.Context, sourceID string, ch domain.Chapter, count int) ([]string, error) {
@@ -58,6 +63,12 @@ func (p *Previewer) Preview(ctx context.Context, sourceID string, ch domain.Chap
 	}
 	if count > previewMaxCount {
 		count = previewMaxCount
+	}
+
+	if p.gate != nil {
+		if be := p.gate.Blocked(time.Now()); be != nil {
+			return nil, be
+		}
 	}
 
 	src, err := p.reg.Get(sourceID)
@@ -77,6 +88,9 @@ func (p *Previewer) Preview(ctx context.Context, sourceID string, ch domain.Chap
 
 	imgs, err := p.fetch(ctx, src, ch, count)
 	if err != nil {
+		if p.gate != nil {
+			err = p.gate.Record(err)
+		}
 		return nil, err
 	}
 

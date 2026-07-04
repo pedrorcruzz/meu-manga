@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -14,12 +15,14 @@ import (
 	"meumanga/internal/adapter/registry"
 	"meumanga/internal/adapter/sakura"
 	"meumanga/internal/config"
+	"meumanga/internal/domain"
 	"meumanga/internal/infra/browser"
 	"meumanga/internal/infra/cookies"
 	"meumanga/internal/infra/dialog"
 	"meumanga/internal/infra/httpapi"
 	"meumanga/internal/infra/httpclient"
 	"meumanga/internal/infra/imageconv"
+	"meumanga/internal/infra/jobstore"
 	"meumanga/internal/infra/storage"
 	"meumanga/internal/usecase"
 )
@@ -58,11 +61,30 @@ func main() {
 		log.Fatalf("download dir: %v", err)
 	}
 
+	// histórico persistente (SQLite) — sobrevive a fechar o app
+	history, err := jobstore.Open(filepath.Join(cfg.DataDir, "meumanga.db"))
+	if err != nil {
+		log.Fatalf("job store: %v", err)
+	}
+	defer history.Close()
+
+	// gate do bloqueio temporário (rate-limit do site), persistida no histórico
+	gate := &domain.RateGate{}
+	gate.SetPersist(func(until time.Time, raw string) { _ = history.SaveBlock(until, raw) })
+	if until, raw, err := history.LoadBlock(); err == nil && !until.IsZero() {
+		gate.Trip(until, raw)
+	}
+
 	bus := usecase.NewEventBus()
 	library := usecase.NewLibrary(reg)
-	downloader := usecase.NewDownloader(reg, store, bus)
+	library.SetGate(gate)
+	downloader := usecase.NewDownloader(reg, store, bus,
+		usecase.WithRepo(history),
+		usecase.WithGate(gate),
+		usecase.WithChapterDelay(cfg.ChapterDelay))
 	settings := usecase.NewSettings(store, dialog.New())
 	previewer := usecase.NewPreviewer(reg, imageconv.Thumbnail)
+	previewer.SetGate(gate)
 
 	// sonda leve: bate no endpoint de busca e confere 200 (sessão realmente passa o CF)
 	probe := func(ctx context.Context) bool {
@@ -99,6 +121,7 @@ func main() {
 		Previewer: previewer,
 		Session:   session,
 		Host:      sakura.Host,
+		Gate:      gate,
 		Probe:     probe,
 		Quit:      quit,
 		Files:     store,

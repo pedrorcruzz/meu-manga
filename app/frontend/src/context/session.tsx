@@ -10,13 +10,15 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
-import { api, type SessionInfo } from '~/api/client'
+import { api, type BlockInfo, type SessionInfo } from '~/api/client'
 
 export interface SessionContextValue {
   /** null enquanto a primeira checagem ainda não terminou. */
   session: SessionInfo | null
   /** null = carregando, true/false = resultado da sonda. */
   valid: boolean | null
+  /** Bloqueio temporário do site ativo, ou null. */
+  block: BlockInfo | null
   loading: boolean
   /** Quando a última checagem foi concluída (null = nunca). */
   lastCheckedAt: Date | null
@@ -31,6 +33,7 @@ export interface SessionContextValue {
 const SessionContext = createContext<SessionContextValue>({
   session: null,
   valid: null,
+  block: null,
   loading: true,
   lastCheckedAt: null,
   secondsSinceCheck: 0,
@@ -44,6 +47,7 @@ export function useSessionContext(): SessionContextValue {
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SessionInfo | null>(null)
+  const [block, setBlock] = useState<BlockInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null)
   const [secondsSinceCheck, setSecondsSinceCheck] = useState(0)
@@ -58,6 +62,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .health()
       .then((h) => {
         setSession(h.session)
+        setBlock(h.block ?? null)
         setLastCheckedAt(new Date())
         setSecondsSinceCheck(0)
 
@@ -117,6 +122,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       value={{
         session,
         valid,
+        block,
         loading,
         lastCheckedAt,
         secondsSinceCheck,

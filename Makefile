@@ -88,7 +88,7 @@ test-go: ## Testa o backend e exige cobertura >= 90% (pacotes puros; IO shells e
 	@cd $(BACKEND_DIR) && $(GO) test ./... -coverprofile=coverage.out -covermode=atomic
 	@# Filtra pacotes que precisam de browser/OS real (outro dev os cobre via integration tags)
 	@cd $(BACKEND_DIR) && \
-		grep -v -E 'meumanga/(cmd/|internal/infra/(browser|dialog|httpclient)/|internal/adapter/sakura/sakura\.go)' \
+		grep -v -E 'meumanga/(cmd/|internal/infra/(browser|dialog|httpclient|jobstore)/|internal/adapter/sakura/sakura\.go)' \
 		coverage.out > coverage-pure.out; \
 		total=$$($(GO) tool cover -func=coverage-pure.out | awk '/^total:/ {print substr($$3, 1, length($$3)-1)}'); \
 		echo "cobertura total (pacotes puros): $$total%"; \

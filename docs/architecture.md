@@ -87,11 +87,36 @@ backend re-reads it. See [sites/sakura.md](sites/sakura.md) for the full map.
 | POST | `/api/downloads` | body `{source, slug, title, chapters[]}` → `{jobId}` |
 | GET | `/api/downloads` | job summaries |
 | GET | `/api/downloads/{jobId}` | job detail (per-chapter status) |
-| DELETE | `/api/downloads/{jobId}` | cancel a job |
+| DELETE | `/api/downloads/{jobId}` | cancel a running job |
+| POST | `/api/downloads/{jobId}/retry` | re-enqueue only the not-completed chapters → `{jobId}` |
+| POST | `/api/downloads/{jobId}/remove` | drop a job from history (files on disk are kept) |
 | POST | `/api/preview` | body `{source, chapter, count}` → `{images:[data:image/jpeg;base64,...]}` — first N pages as JPEG thumbnails |
 | GET | `/api/events` | SSE stream of `{type, jobId, chapterNumber, page, totalPages, message, status}` |
 
 `type` ∈ `progress` | `chapter_done` | `job_done` | `error`.
+
+`/api/health` also returns a `block` object (or `null`): the active temporary
+rate-limit block (`{active, until, rawTime, message}`), distinct from the
+Cloudflare session.
+
+## Persistence & rate-limit block
+
+Two concerns survive a restart, both in a local SQLite DB
+(`~/.meumanga/meumanga.db`, `infra/jobstore`):
+
+- **History** — every `Job` (per-chapter status + volume covers) is saved on each
+  state change. On boot the `Downloader` reloads it; jobs left "running" are
+  downgraded to failed so the UI can offer **redo the missing chapters** (`Retry`
+  rebuilds a request from the not-completed tasks only). Removing a job deletes
+  the history row; the downloaded JPEGs on disk are untouched.
+- **Block window** — a shared `domain.RateGate` holds the site's temporary block
+  (see [sites/sakura.md](sites/sakura.md)). It's tripped by a `BlockedError`
+  surfaced from `browser.Goto`, persisted, and consulted by `Library.Chapters`,
+  `Previewer.Preview` and `Downloader.Enqueue`/`run` to short-circuit new work
+  until the release time — the HTTP layer maps it to `503`.
+
+A jittered `ChapterDelay` between chapters (`MM_CHAPTER_DELAY_MS`) paces
+downloads to reduce how often the block triggers.
 
 ## Frontend
 

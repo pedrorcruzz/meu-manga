@@ -98,7 +98,34 @@ stage** (`FetchEnable` with `RequestStage: Response` → `FetchGetResponseBody`)
 > bottom (and wait for network idle) so every page fires before finishing
 > capture; otherwise only the first batch is saved.
 
+## Temporary block ("atividade incomum")
+
+Separate from Cloudflare, Sakura has its own **rate-limit / anti-abuse** wall.
+After many requests from one network in a short window it serves a full page:
+
+> **Ops! Algo está errado.** Detectamos uma atividade incomum na sua rede.
+> O seu acesso será liberado às **HH:MM GMT-3**.
+
+This is **not a challenge** — there is nothing to solve, only a timed lockout.
+Retrying only extends it. We detect it in `browser.Page.Goto` (the loaded page's
+`innerText` contains "atividade incomum"), parse the release time, and return a
+`domain.BlockedError{Until, RawTime}`.
+
+Handling (see [architecture.md](../architecture.md)):
+
+- A shared `domain.RateGate` is *tripped* with the release time and **persisted**
+  (survives restart). While active it **short-circuits** new chapter listings,
+  previews and downloads with the same `BlockedError` — we stop hammering the
+  site instead of failing chapter by chapter.
+- `/api/health` exposes a distinct `block` object; the UI shows a dedicated rose
+  banner with the release time and a "go slower" tip — **not** the Cloudflare
+  banner, so the user knows waiting (not solving) is the fix.
+- To reduce how often it triggers, downloads pace themselves with a jittered
+  delay between chapters (`MM_CHAPTER_DELAY_MS`, default 3000).
+
 ## Output
 
 Saved to `~/Documents/Mangas/<obra title>/<Capitulo N>/NNN.jpg`, zero-padded,
-in page order.
+in page order. Job history (which chapters completed/failed) is persisted in
+SQLite so a run interrupted by a block can be resumed via **"Refazer o que
+faltou"** without re-downloading completed chapters.
