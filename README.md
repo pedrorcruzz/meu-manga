@@ -91,7 +91,7 @@ ou clicando no botão **Encerrar** no canto superior direito do app. Os dois des
 backend e o frontend e liberam as portas 8080 e 3000.
 
 <details open>
-<summary>🔌 <strong>4. Conectores</strong></summary>
+<summary><strong>4. Conectores</strong></summary>
 
 <br>
 
