@@ -42,25 +42,19 @@ baixa tudo em JPGs numerados, prontos pro seu leitor ou pro Kindle.
 - <a href="https://bun.sh/" target="_blank" rel="noreferrer">Bun</a> (build e dependências do frontend)
 - Um navegador Chromium que você use (Chrome, Brave, Edge, Dia, Arc, Vivaldi, Opera)
 
-### 1. Instalação
+### 1. Instalação e uso
 
-No terminal, clone o projeto, entre na pasta e instale as dependências:
+No terminal, clone o projeto, entre na pasta e rode:
 
 ```bash
 git clone https://github.com/pedrorcruzz/meu-manga.git
 cd meu-manga
-make install
-```
-
-### 2. Como usar
-
-No terminal, dentro da pasta do projeto, rode:
-
-```bash
 make
 ```
 
-Isso compila e sobe tudo e abre o navegador em `http://localhost:3000`.
+Só isso. O `make` baixa as dependências automaticamente (se ainda não tiver),
+compila, sobe tudo e abre o navegador em `http://localhost:3000`. Não precisa
+rodar `make install` antes.
 
 **Estrutura dos arquivos baixados:**
 
@@ -74,21 +68,21 @@ Downloads/
             └── ...
 ```
 
-### 3. Comandos
+### 2. Comandos
 
 | Comando          | O que faz                                                        |
 |------------------|------------------------------------------------------------------|
-| `make`           | Compila e sobe backend e frontend (produção) e abre o navegador  |
+| `make`           | Instala deps (se preciso), compila e sobe tudo e abre o navegador |
 | `make start`     | Igual ao `make`                                                  |
-| `make localhost` | Sobe em modo dev (Vite HMR, hot-reload)                          |
+| `make localhost` | Sobe em modo dev (Vite HMR, hot-reload) — também instala deps    |
 | `make stop`      | Encerra tudo, libera as portas e apaga os builds                 |
-| `make install`   | Baixa as dependências do backend e do frontend                   |
+| `make install`   | Baixa as dependências do backend e do frontend (opcional)        |
 
 **Encerrar o programa:** dá pra encerrar de duas formas, rodando `make stop` no terminal
 ou clicando no botão **Encerrar** no canto superior direito do app. Os dois desligam o
 backend e o frontend e liberam as portas 8080 e 3000.
 
-### 4. Conectores
+### 3. Conectores
 
 O Meu Mangá busca os mangás através de conectores. Cada site é um conector.
 

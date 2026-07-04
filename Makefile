@@ -16,8 +16,17 @@ help: ## Lista os comandos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
+.PHONY: deps
+deps: ## Instala as dependências só se ainda não estiverem baixadas
+	@if [ ! -d $(FRONTEND_DIR)/node_modules ]; then \
+		echo "→ node_modules ausente — baixando dependências do frontend…"; \
+		cd $(FRONTEND_DIR) && $(BUN) install; \
+	fi
+	@echo "→ garantindo dependências do backend…"
+	@cd $(BACKEND_DIR) && $(GO) mod download
+
 .PHONY: start
-start: $(RUN_DIR) ## Compila e sobe backend + frontend (produção, estável) e abre o navegador
+start: $(RUN_DIR) deps ## Instala deps (se preciso), compila e sobe backend + frontend e abre o navegador
 	@echo "→ compilando frontend…"
 	@cd $(FRONTEND_DIR) && $(BUN) run build > ../../$(RUN_DIR)/build.log 2>&1 || { echo "✗ build do frontend falhou — veja $(RUN_DIR)/build.log"; exit 1; }
 	@echo "→ subindo backend (:8080)…"
@@ -52,7 +61,7 @@ stop: ## Para backend + frontend
 	@echo "✓ parado"
 
 .PHONY: localhost
-localhost: $(RUN_DIR) ## Igual ao start, mas em modo dev (Vite HMR, sem build)
+localhost: $(RUN_DIR) deps ## Igual ao start, mas em modo dev (Vite HMR, sem build)
 	@echo "→ subindo backend (:8080)…"
 	@cd $(BACKEND_DIR) && $(GO) run ./cmd/server > ../../$(RUN_DIR)/backend.log 2>&1 & echo $$! > $(RUN_DIR)/backend.pid
 	@echo "→ subindo frontend em dev (:3000)…"
