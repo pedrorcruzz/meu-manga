@@ -47,11 +47,14 @@ baixa tudo em JPGs numerados, prontos pro seu leitor ou pro Kindle.
 
 ## Requisitos
 
-- **macOS** (o app lê o cookie do seu navegador via Keychain — específico do macOS)
 - **[Go](https://go.dev/dl/)** ≥ 1.25 — backend
-- **[Node](https://nodejs.org/)** — serve o frontend em produção
+- **[Node](https://nodejs.org/)** — serve o frontend
 - **[Bun](https://bun.sh/)** — build e dependências do frontend
 - Um navegador **Chromium** que você use (Chrome, Brave, Edge, Dia, Arc, Vivaldi, Opera…)
+
+> **Sistemas:** hoje o app está testado no **macOS**. Suporte a **Linux** e
+> **Windows** está no roadmap — o app precisa ler o cookie do seu navegador para
+> passar o Cloudflare, e isso funciona de um jeito diferente em cada sistema.
 
 ---
 
@@ -111,7 +114,6 @@ Downloads/
 | `make localhost` | Sobe em modo dev (Vite HMR, hot-reload)                          |
 | `make stop`      | **Encerra tudo**, libera as portas e apaga os builds            |
 | `make install`   | Baixa as dependências do backend e do frontend                  |
-| `make test`      | Roda os testes com cobertura (mín. 90%)                         |
 
 ### Encerrar o programa
 
@@ -124,22 +126,14 @@ Qualquer um dos dois desliga o backend e o frontend e libera as portas 8080/3000
 
 ---
 
-## Como funciona (resumo)
+## Conectores
 
-- **Backend (Go, Clean Architecture):** cada site é um *conector* (adapter) que
-  implementa uma interface comum. O do Sakura reusa o cookie `cf_clearance` do seu
-  navegador (descriptografado via Keychain) para passar o Cloudflare, e captura as
-  páginas do leitor via um Chromium headless.
-- **Frontend (TanStack Start + React 19):** busca, montagem de volumes e painel de
-  downloads com progresso ao vivo (SSE).
+O Meu Mangá busca os mangás através de **conectores** — cada site é um conector.
 
-Mais detalhes em [`docs/`](docs/).
+- **Sakura Mangás** — mangás em **português (PT-BR)**. É o conector disponível hoje.
 
----
-
-## Autor
-
-Feito por **Pedro Rosa** — [github.com/pedrorcruzz](https://github.com/pedrorcruzz)
+Novos conectores podem entrar no futuro (inclusive de sites em outros idiomas) — a
+ideia é reunir várias fontes num só lugar.
 
 ---
 
