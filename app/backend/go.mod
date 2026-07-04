@@ -6,7 +6,6 @@ require (
 	github.com/bogdanfinn/fhttp v0.6.8
 	github.com/bogdanfinn/tls-client v1.15.1
 	github.com/go-rod/rod v0.116.2
-	github.com/go-rod/stealth v0.4.9
 	modernc.org/sqlite v1.53.0
 )
 

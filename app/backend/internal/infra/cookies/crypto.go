@@ -8,17 +8,22 @@ import (
 	"errors"
 )
 
-// domainHashPrefix é o SHA256 do host que o Chromium 150 prefixa no valor v10.
+// domainHashPrefix é o SHA256 do host que o Chromium recente prefixa no valor.
 const domainHashPrefix = 32
 
-// DeriveKey reproduz a derivação de chave do Chromium no macOS.
-func DeriveKey(keychainPassword string) ([]byte, error) {
-	return pbkdf2.Key(sha1.New, keychainPassword, []byte("saltysalt"), 1003, 16)
+// errNoKey indica que não foi possível obter a chave de criptografia do navegador.
+var errNoKey = errors.New("cookie encryption key unavailable")
+
+// DeriveKey reproduz a derivação de chave do Chromium (PBKDF2-SHA1, saltysalt).
+// iterations = 1003 no macOS, 1 no Linux.
+func DeriveKey(password string, iterations int) ([]byte, error) {
+	return pbkdf2.Key(sha1.New, password, []byte("saltysalt"), iterations, 16)
 }
 
-// DecryptV10 descriptografa um valor de cookie no formato v10 do Chromium/macOS.
-func DecryptV10(encrypted, key []byte) ([]byte, error) {
-	if len(encrypted) < 3 || string(encrypted[:3]) != "v10" {
+// DecryptCBC descriptografa um valor de cookie AES-128-CBC (prefixos v10/v11 do
+// Chromium no macOS e Linux).
+func DecryptCBC(encrypted, key []byte) ([]byte, error) {
+	if len(encrypted) < 3 || (string(encrypted[:3]) != "v10" && string(encrypted[:3]) != "v11") {
 		// valor em texto puro (cookie não criptografado)
 		return encrypted, nil
 	}

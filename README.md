@@ -11,7 +11,9 @@
 <p align="center">
   <img alt="Go" src="https://img.shields.io/badge/backend-Go-00ADD8?logo=go&logoColor=white" />
   <img alt="React" src="https://img.shields.io/badge/frontend-React%2019-0b0b0b?logo=react" />
-  <img alt="macOS" src="https://img.shields.io/badge/plataforma-macOS-000000?logo=apple" />
+  <img alt="macOS" src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" />
+  <img alt="Linux" src="https://img.shields.io/badge/Linux-1a1a1a?logo=linux&logoColor=white" />
+  <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" />
 </p>
 
 ---
@@ -52,9 +54,11 @@ baixa tudo em JPGs numerados, prontos pro seu leitor ou pro Kindle.
 - **[Bun](https://bun.sh/)** — build e dependências do frontend
 - Um navegador **Chromium** que você use (Chrome, Brave, Edge, Dia, Arc, Vivaldi, Opera…)
 
-> **Sistemas:** hoje o app está testado no **macOS**. Suporte a **Linux** e
-> **Windows** está no roadmap — o app precisa ler o cookie do seu navegador para
-> passar o Cloudflare, e isso funciona de um jeito diferente em cada sistema.
+> **Sistemas:** roda em **macOS, Linux e Windows** — o app lê o cookie do seu
+> navegador para passar o Cloudflare (Keychain no macOS, Secret Service no Linux,
+> DPAPI no Windows). Testado principalmente no macOS; feedback de Linux/Windows é
+> bem-vindo. No Windows, versões recentes do Chrome com *app-bound encryption*
+> podem não funcionar — nesse caso use outro navegador Chromium (Brave, Edge…).
 
 ---
 
@@ -77,16 +81,14 @@ make install
 make
 ```
 
-Isso compila e sobe tudo e **abre o navegador** em `http://localhost:3000`. Então:
+Isso compila e sobe tudo e **abre o navegador** em `http://localhost:3000`.
 
-1. **Resolva o Cloudflare uma vez.** O Sakura é protegido por Cloudflare. Abra
-   [sakuramangas.org](https://sakuramangas.org/) **no seu navegador** e passe o
-   desafio "Um momento…". O app reaproveita esse cookie automaticamente. Se o badge
-   de sessão ficar vermelho, é só refazer isso (tem um botão no aviso).
-2. **Busque** o mangá (busca ao vivo conforme você digita).
-3. Abra a obra, escolha os capítulos ou **monte volumes** (com capa opcional).
-4. Baixe. Por padrão os arquivos vão para a pasta **Downloads** do sistema
-   (dá pra trocar dentro do app).
+### Sakura Mangás
+
+Mangás em PT-BR. O site é protegido por Cloudflare — então, **uma vez**, abra
+[sakuramangas.org](https://sakuramangas.org/) **no seu navegador** e passe o desafio
+"Um momento…". O app reaproveita esse cookie automaticamente para acessar o site. Se o
+badge de sessão ficar vermelho, é só refazer isso (tem um botão no aviso).
 
 > Ao baixar muitos capítulos, o site pode pedir um **captcha do leitor** — o app avisa
 > claramente qual capítulo precisa; é só abrir ele no navegador e resolver.

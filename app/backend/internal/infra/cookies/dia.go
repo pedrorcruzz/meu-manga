@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -15,54 +14,39 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Browser descreve um navegador Chromium: onde ficam seus perfis e o serviço
-// "Safe Storage" no Keychain do macOS que guarda a chave de criptografia.
+// Browser descreve um navegador Chromium: onde ficam seus perfis e a referência
+// da chave de criptografia (serviço de Keychain no macOS / Secret Service no
+// Linux; no Windows a chave vem do arquivo Local State).
 type Browser struct {
 	Name     string
 	DataDir  string // pasta com os perfis (Default, Profile 1, …)
 	Keychain string
 }
 
-// DefaultBrowsers lista os navegadores Chromium suportados no macOS. A sessão é
-// descoberta automaticamente naquele que tiver o cookie do Cloudflare.
-func DefaultBrowsers(home string) []Browser {
-	base := filepath.Join(home, "Library", "Application Support")
-	return []Browser{
-		{"Dia", filepath.Join(base, "Dia", "User Data"), "Dia Safe Storage"},
-		{"Google Chrome", filepath.Join(base, "Google", "Chrome"), "Chrome Safe Storage"},
-		{"Brave", filepath.Join(base, "BraveSoftware", "Brave-Browser"), "Brave Safe Storage"},
-		{"Microsoft Edge", filepath.Join(base, "Microsoft Edge"), "Microsoft Edge Safe Storage"},
-		{"Vivaldi", filepath.Join(base, "Vivaldi"), "Vivaldi Safe Storage"},
-		{"Opera", filepath.Join(base, "com.operasoftware.Opera"), "Opera Safe Storage"},
-		{"Arc", filepath.Join(base, "Arc", "User Data"), "Arc"},
-		{"Chromium", filepath.Join(base, "Chromium"), "Chromium Safe Storage"},
-	}
-}
+// DefaultBrowsers lista os navegadores Chromium do sistema atual (por-OS).
+func DefaultBrowsers(home string) []Browser { return osBrowsers(home) }
 
 // Provider descobre e descriptografa os cookies do Cloudflare no navegador real
-// do usuário (qualquer Chromium suportado).
+// do usuário. A leitura de chave/valor varia por sistema (arquivos por-OS).
 type Provider struct {
 	browsers  []Browser
 	userAgent string
-	// passwordFn é injetável para testes (evita tocar no Keychain real).
+	// passwordFn busca a senha "Safe Storage" (Keychain/Secret Service); injetável
+	// para testes. No Windows não é usada (a chave vem do Local State).
 	passwordFn func(service string) (string, error)
 }
 
 // New builds a Provider over the given candidate browsers.
 func New(browsers []Browser, userAgent string) *Provider {
-	return &Provider{browsers: browsers, userAgent: userAgent, passwordFn: keychainPassword}
+	return &Provider{browsers: browsers, userAgent: userAgent, passwordFn: defaultPasswordFn}
 }
 
 // Session finds the first browser holding a valid Cloudflare session for host.
 func (p *Provider) Session(ctx context.Context, host string) (domain.Session, error) {
 	for _, b := range p.browsers {
-		pw, err := p.passwordFn(b.Keychain)
-		if err != nil || pw == "" {
-			continue // navegador não instalado / sem chave no Keychain
-		}
-		key, err := DeriveKey(pw)
+		key, err := browserKey(b, p.passwordFn)
 		if err != nil {
-			continue
+			continue // navegador não instalado / sem chave
 		}
 		for _, db := range findCookieDBs(b.DataDir) {
 			cookies, err := readCookies(ctx, db, host, key)
@@ -71,15 +55,15 @@ func (p *Provider) Session(ctx context.Context, host string) (domain.Session, er
 			}
 			s := domain.Session{Cookies: cookies, UserAgent: p.userAgent}
 			if s.Valid() {
-				return s, nil // achamos cf_clearance
+				return s, nil
 			}
 		}
 	}
 	return domain.Session{}, domain.ErrNoSession
 }
 
-// findCookieDBs lista os arquivos "Cookies" de todos os perfis de um navegador
-// (inclui o caminho novo Network/Cookies dos Chromium recentes).
+// findCookieDBs lista os arquivos "Cookies" de todos os perfis (inclui o caminho
+// novo Network/Cookies dos Chromium recentes).
 func findCookieDBs(dataDir string) []string {
 	profiles := map[string]bool{"Default": true}
 	if entries, err := os.ReadDir(dataDir); err == nil {
@@ -128,22 +112,13 @@ func readCookies(ctx context.Context, cookieDB, host string, key []byte) (map[st
 		if err := rows.Scan(&name, &enc); err != nil {
 			return nil, err
 		}
-		val, err := DecryptV10(enc, key)
+		val, err := decryptValue(enc, key) // implementação por-OS (CBC no mac/linux, GCM no windows)
 		if err != nil {
-			continue // pula cookies que não descriptografam
+			continue
 		}
 		out[name] = string(val)
 	}
 	return out, rows.Err()
-}
-
-// keychainPassword lê a senha de criptografia do Keychain do macOS.
-func keychainPassword(service string) (string, error) {
-	out, err := exec.Command("security", "find-generic-password", "-s", service, "-w").Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 func copyToTemp(src string) (string, error) {
