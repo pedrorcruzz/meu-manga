@@ -11,10 +11,14 @@ import {
   Download,
   Plus,
   Search,
+  X,
   Zap,
 } from 'lucide-react'
 import { api, type Chapter, type VolumeInput } from '~/api/client'
 import { VolumeCard, type Volume, type PreviewState } from './VolumeCard'
+import { VolumeSelectModal } from './VolumeSelectModal'
+import { FilterChip } from './FilterChip'
+import { useIncremental } from '~/hooks/useIncremental'
 
 let _volCounter = 0
 function nextVolId(): string {
@@ -92,6 +96,19 @@ export function VolumeBuilder({
   const [leftSelected, setLeftSelected] = useState<Set<string>>(new Set())
   const [targetVolId, setTargetVolId] = useState<string>('')
 
+  // Filtros do pool: por volume da fonte e por estado de seleção/atribuição.
+  const [volFilter, setVolFilter] = useState<'all' | 'with' | 'without'>('all')
+  const [selFilter, setSelFilter] = useState<'all' | 'assigned' | 'unassigned'>(
+    'all',
+  )
+
+  // ── Popup de seleção de volumes ──────────────────────────────────────────────
+  const [pending, setPending] = useState<{
+    volumes: Volume[]
+    title: string
+    source: 'sakura' | 'count'
+  } | null>(null)
+
   // ── Carousel state ───────────────────────────────────────────────────────────
   const [currentVolIdx, setCurrentVolIdx] = useState(0)
   const [jumpQuery, setJumpQuery] = useState('')
@@ -126,12 +143,37 @@ export function VolumeBuilder({
 
   const filteredLeft = useMemo(() => {
     const f = leftFilter.trim().toLowerCase()
-    if (!f) return chapters
-    return chapters.filter(
-      (c) =>
-        c.number.includes(f) || c.title.toLowerCase().includes(f),
-    )
-  }, [chapters, leftFilter])
+    return chapters.filter((c) => {
+      if (f && !(c.number.includes(f) || c.title.toLowerCase().includes(f)))
+        return false
+      if (volFilter === 'with' && !c.volume) return false
+      if (volFilter === 'without' && c.volume) return false
+      if (selFilter === 'assigned' && !assignedIds.has(c.id)) return false
+      if (selFilter === 'unassigned' && assignedIds.has(c.id)) return false
+      return true
+    })
+  }, [chapters, leftFilter, volFilter, selFilter, assignedIds])
+
+  // Scroll infinito do pool — revela os capítulos em lotes conforme rola.
+  const {
+    visible: visibleLeft,
+    sentinelRef: leftSentinelRef,
+    hasMore: leftHasMore,
+  } = useIncremental(filteredLeft, 50)
+
+  // Contadores para os chips de filtro do pool.
+  const poolCounts = useMemo(() => {
+    const withVol = chapters.filter((c) => c.volume).length
+    const assigned = chapters.filter((c) => assignedIds.has(c.id)).length
+    return {
+      withVol,
+      withoutVol: chapters.length - withVol,
+      assigned,
+      unassigned: chapters.length - assigned,
+    }
+  }, [chapters, assignedIds])
+
+  const poolFiltersActive = volFilter !== 'all' || selFilter !== 'all'
 
   /** Índice seguro: clampado dentro dos limites do array de volumes. */
   const safeCurrentVolIdx =
@@ -229,28 +271,46 @@ export function VolumeBuilder({
         coverImage: null,
       })
     }
-    setVolumes(newVols)
-    setCurrentVolIdx(0)
-    setTargetVolId(newVols[0]?.id ?? '')
-    setLeftSelected(new Set())
-    if (newVols.length > 0) {
-      setApplySuccess(true)
-      setTimeout(() => setApplySuccess(false), 700)
-    }
-    triggerPreviews(newVols)
+    if (newVols.length === 0) return
+    setPending({
+      volumes: newVols,
+      title: `Volume Inteligente — ${n} cap. por volume`,
+      source: 'count',
+    })
   }
 
   function generateFromSakura() {
     const newVols = buildSakuraVolumes(chapters)
-    setVolumes(newVols)
+    if (newVols.length === 0) return
+    setPending({
+      volumes: newVols,
+      title: 'Volumes Inteligentes (por volume da fonte)',
+      source: 'sakura',
+    })
+  }
+
+  /** Aplica os volumes escolhidos no popup, renomeando em sequência (V001, V002…). */
+  function applyPending(chosen: Volume[]) {
+    const source = pending?.source
+    setPending(null)
+    if (chosen.length === 0) return
+    // Renumera sequencialmente preservando o rótulo original da fonte, se houver.
+    const finalVols = chosen.map((v, i) => ({
+      ...v,
+      name: v.label ? v.name : padName(i),
+    }))
+    setVolumes(finalVols)
     setCurrentVolIdx(0)
-    setTargetVolId(newVols[0]?.id ?? '')
+    setTargetVolId(finalVols[0]?.id ?? '')
     setLeftSelected(new Set())
-    if (newVols.length > 0) {
+    if (source === 'sakura') {
       setSakuraSuccess(true)
       setTimeout(() => setSakuraSuccess(false), 700)
+    } else {
+      setApplySuccess(true)
+      setTimeout(() => setApplySuccess(false), 700)
     }
-    triggerPreviews(newVols)
+    triggerPreviews(finalVols)
   }
 
   // ── Gestão de volumes ────────────────────────────────────────────────────────
@@ -381,6 +441,24 @@ export function VolumeBuilder({
 
   function clearLeftSelected() {
     setLeftSelected(new Set())
+  }
+
+  /** Inverte a seleção entre os capítulos filtrados ainda não atribuídos. */
+  function invertLeftSelection() {
+    setLeftSelected((prev) => {
+      const next = new Set(prev)
+      filteredLeft.forEach((c) => {
+        if (assignedIds.has(c.id)) return
+        next.has(c.id) ? next.delete(c.id) : next.add(c.id)
+      })
+      return next
+    })
+  }
+
+  function clearPoolFilters() {
+    setVolFilter('all')
+    setSelFilter('all')
+    setLeftFilter('')
   }
 
   function addSelectedToVolume() {
@@ -515,7 +593,64 @@ export function VolumeBuilder({
                   className="w-full rounded-lg border border-neutral-800 bg-neutral-800/60 py-1.5 pl-8 pr-3 text-sm placeholder:text-neutral-700 focus:border-neutral-600 focus:outline-none"
                 />
               </div>
-              {/* Selecionar todos / Limpar */}
+              {/* Filtros de capítulos */}
+              <div className="flex flex-wrap items-center gap-1">
+                {hasSakuraVolumes && (
+                  <>
+                    <FilterChip
+                      active={volFilter === 'with'}
+                      count={poolCounts.withVol}
+                      onClick={() =>
+                        setVolFilter((v) => (v === 'with' ? 'all' : 'with'))
+                      }
+                    >
+                      Com volume
+                    </FilterChip>
+                    <FilterChip
+                      active={volFilter === 'without'}
+                      count={poolCounts.withoutVol}
+                      onClick={() =>
+                        setVolFilter((v) =>
+                          v === 'without' ? 'all' : 'without',
+                        )
+                      }
+                    >
+                      Sem volume
+                    </FilterChip>
+                  </>
+                )}
+                <FilterChip
+                  active={selFilter === 'assigned'}
+                  count={poolCounts.assigned}
+                  onClick={() =>
+                    setSelFilter((v) => (v === 'assigned' ? 'all' : 'assigned'))
+                  }
+                >
+                  Já usados
+                </FilterChip>
+                <FilterChip
+                  active={selFilter === 'unassigned'}
+                  count={poolCounts.unassigned}
+                  onClick={() =>
+                    setSelFilter((v) =>
+                      v === 'unassigned' ? 'all' : 'unassigned',
+                    )
+                  }
+                >
+                  Disponíveis
+                </FilterChip>
+                {(poolFiltersActive || leftFilter) && (
+                  <button
+                    type="button"
+                    onClick={clearPoolFilters}
+                    className="ml-1 flex items-center gap-1 text-[11px] text-neutral-500 transition-colors hover:text-neutral-200"
+                  >
+                    <X size={11} aria-hidden="true" />
+                    Limpar filtros
+                  </button>
+                )}
+              </div>
+              {/* Selecionar todos / Inverter / Limpar */}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -528,16 +663,27 @@ export function VolumeBuilder({
                 <span className="text-neutral-700" aria-hidden="true">·</span>
                 <button
                   type="button"
+                  onClick={invertLeftSelection}
+                  disabled={selectableInLeft === 0}
+                  className="text-xs text-neutral-500 transition-colors hover:text-neutral-200 disabled:opacity-40"
+                >
+                  Inverter
+                </button>
+                <span className="text-neutral-700" aria-hidden="true">·</span>
+                <button
+                  type="button"
                   onClick={clearLeftSelected}
-                  className="text-xs text-neutral-500 transition-colors hover:text-neutral-200"
+                  disabled={leftSelected.size === 0}
+                  className="text-xs text-neutral-500 transition-colors hover:text-neutral-200 disabled:opacity-40"
                 >
                   Limpar
                 </button>
-                {leftSelected.size > 0 && (
-                  <span className="ml-auto text-xs text-neutral-600">
-                    {leftSelected.size} sel.
-                  </span>
-                )}
+                <span className="ml-auto text-xs text-neutral-600">
+                  {poolFiltersActive || leftFilter
+                    ? `${filteredLeft.length} filtrados · `
+                    : ''}
+                  {leftSelected.size} sel.
+                </span>
               </div>
             </div>
 
@@ -545,10 +691,12 @@ export function VolumeBuilder({
             <ul className="divide-y divide-neutral-800/50">
               {filteredLeft.length === 0 ? (
                 <li className="px-3 py-6 text-center text-sm text-neutral-700">
-                  {leftFilter ? 'Nenhum resultado.' : 'Sem capítulos.'}
+                  {leftFilter || volFilter !== 'all' || selFilter !== 'all'
+                    ? 'Nenhum resultado.'
+                    : 'Sem capítulos.'}
                 </li>
               ) : (
-                filteredLeft.map((c) => {
+                visibleLeft.map((c) => {
                   const assigned = assignedIds.has(c.id)
                   const checked = leftSelected.has(c.id)
                   return (
@@ -594,6 +742,15 @@ export function VolumeBuilder({
                 })
               )}
             </ul>
+            {/* Sentinela do scroll infinito */}
+            {leftHasMore && (
+              <div
+                ref={leftSentinelRef}
+                className="py-3 text-center text-[11px] text-neutral-700"
+              >
+                carregando mais…
+              </div>
+            )}
           </div>
 
           {/* Ação: adicionar selecionados a um volume (fora do scroll) */}
@@ -779,6 +936,16 @@ export function VolumeBuilder({
           </p>
         )}
       </div>
+
+      {/* ── Popup de seleção de volumes ──────────────────────────────────────── */}
+      {pending && (
+        <VolumeSelectModal
+          title={pending.title}
+          volumes={pending.volumes}
+          onConfirm={applyPending}
+          onClose={() => setPending(null)}
+        />
+      )}
     </div>
   )
 }

@@ -1,6 +1,14 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ArrowLeft, ArrowUp, BookOpen, Loader2, Search } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  BookOpen,
+  Loader2,
+  Search,
+  X,
+} from 'lucide-react'
 import {
   api,
   NoSessionError,
@@ -9,9 +17,11 @@ import {
   type VolumeInput,
 } from '~/api/client'
 import { ChapterList, sortChapters } from '~/components/ChapterList'
+import { FilterChip } from '~/components/FilterChip'
 import { VolumeBuilder } from '~/components/VolumeBuilder'
 import { useSessionContext } from '~/context/session'
 import { useAsync } from '~/hooks/useAsync'
+import { useIncremental } from '~/hooks/useIncremental'
 import { thumbSrc } from '~/utils/img'
 
 export const Route = createFileRoute('/obra/$source/$slug')({
@@ -35,6 +45,8 @@ function ObraPage() {
   const [order, setOrder] = useState<Order>('asc')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
+  const [volFilter, setVolFilter] = useState<'all' | 'with' | 'without'>('all')
+  const [selFilter, setSelFilter] = useState<'all' | 'sel' | 'unsel'>('all')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitSessionError, setSubmitSessionError] = useState(false)
@@ -54,11 +66,41 @@ function ObraPage() {
 
   const filteredChapters = useMemo(() => {
     const f = filter.trim().toLowerCase()
-    if (!f) return sortedChapters
-    return sortedChapters.filter(
-      (c) => c.number.includes(f) || c.title.toLowerCase().includes(f),
-    )
-  }, [sortedChapters, filter])
+    return sortedChapters.filter((c) => {
+      if (f && !(c.number.includes(f) || c.title.toLowerCase().includes(f)))
+        return false
+      if (volFilter === 'with' && !c.volume) return false
+      if (volFilter === 'without' && c.volume) return false
+      if (selFilter === 'sel' && !selected.has(c.id)) return false
+      if (selFilter === 'unsel' && selected.has(c.id)) return false
+      return true
+    })
+  }, [sortedChapters, filter, volFilter, selFilter, selected])
+
+  const hasSourceVolumes = useMemo(
+    () => sortedChapters.some((c) => c.volume),
+    [sortedChapters],
+  )
+
+  const {
+    visible: visibleChapters,
+    sentinelRef: chapterSentinelRef,
+    hasMore: chaptersHasMore,
+  } = useIncremental(filteredChapters, 50)
+
+  // Contadores para os chips de filtro.
+  const poolCounts = useMemo(() => {
+    const withVol = sortedChapters.filter((c) => c.volume).length
+    const sel = sortedChapters.filter((c) => selected.has(c.id)).length
+    return {
+      withVol,
+      withoutVol: sortedChapters.length - withVol,
+      sel,
+      unsel: sortedChapters.length - sel,
+    }
+  }, [sortedChapters, selected])
+
+  const filtersActive = volFilter !== 'all' || selFilter !== 'all'
 
   const allFilteredSelected =
     filteredChapters.length > 0 &&
@@ -82,6 +124,23 @@ function ObraPage() {
 
   function clearAll() {
     setSelected(new Set())
+  }
+
+  /** Inverte a seleção dentro do subconjunto atualmente filtrado. */
+  function invertFilteredSelection() {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      filteredChapters.forEach((c) =>
+        next.has(c.id) ? next.delete(c.id) : next.add(c.id),
+      )
+      return next
+    })
+  }
+
+  function clearFilters() {
+    setVolFilter('all')
+    setSelFilter('all')
+    setFilter('')
   }
 
   async function submitDownload(chapters: Chapter[], volumes?: VolumeInput[]) {
@@ -320,16 +379,82 @@ function ObraPage() {
                   />
                 </div>
 
-                {/* Linha 3: selecionar / limpar + contador */}
+                {/* Linha 3: filtros de capítulos */}
+                <div className="flex flex-wrap items-center gap-1">
+                  {hasSourceVolumes && (
+                    <>
+                      <FilterChip
+                        active={volFilter === 'with'}
+                        count={poolCounts.withVol}
+                        onClick={() =>
+                          setVolFilter((v) => (v === 'with' ? 'all' : 'with'))
+                        }
+                      >
+                        Com volume
+                      </FilterChip>
+                      <FilterChip
+                        active={volFilter === 'without'}
+                        count={poolCounts.withoutVol}
+                        onClick={() =>
+                          setVolFilter((v) =>
+                            v === 'without' ? 'all' : 'without',
+                          )
+                        }
+                      >
+                        Sem volume
+                      </FilterChip>
+                    </>
+                  )}
+                  <FilterChip
+                    active={selFilter === 'sel'}
+                    count={poolCounts.sel}
+                    onClick={() =>
+                      setSelFilter((v) => (v === 'sel' ? 'all' : 'sel'))
+                    }
+                  >
+                    Selecionados
+                  </FilterChip>
+                  <FilterChip
+                    active={selFilter === 'unsel'}
+                    count={poolCounts.unsel}
+                    onClick={() =>
+                      setSelFilter((v) => (v === 'unsel' ? 'all' : 'unsel'))
+                    }
+                  >
+                    Não selecionados
+                  </FilterChip>
+                  {(filtersActive || filter) && (
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="ml-1 flex items-center gap-1 text-[11px] text-neutral-500 transition-colors hover:text-neutral-200"
+                    >
+                      <X size={11} aria-hidden="true" />
+                      Limpar filtros
+                    </button>
+                  )}
+                </div>
+
+                {/* Linha 4: selecionar / inverter / limpar + contador */}
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={allFilteredSelected ? clearAll : selectAllFiltered}
-                    className="text-xs text-neutral-500 transition-colors hover:text-neutral-200"
+                    disabled={filteredChapters.length === 0}
+                    className="text-xs text-neutral-500 transition-colors hover:text-neutral-200 disabled:opacity-40"
                   >
-                    {allFilteredSelected ? 'Limpar' : 'Selecionar todos'}
+                    {allFilteredSelected ? 'Limpar visíveis' : 'Selecionar todos'}
                   </button>
-                  {selected.size > 0 && !allFilteredSelected && (
+                  <span className="text-neutral-700" aria-hidden="true">·</span>
+                  <button
+                    type="button"
+                    onClick={invertFilteredSelection}
+                    disabled={filteredChapters.length === 0}
+                    className="text-xs text-neutral-500 transition-colors hover:text-neutral-200 disabled:opacity-40"
+                  >
+                    Inverter
+                  </button>
+                  {selected.size > 0 && (
                     <>
                       <span className="text-neutral-700" aria-hidden="true">·</span>
                       <button
@@ -337,25 +462,35 @@ function ObraPage() {
                         onClick={clearAll}
                         className="text-xs text-neutral-500 transition-colors hover:text-neutral-200"
                       >
-                        Limpar
+                        Limpar tudo
                       </button>
                     </>
                   )}
-                  {selected.size > 0 && (
-                    <span className="ml-auto font-mono text-xs text-neutral-600">
-                      {selected.size} / {sortedChapters.length} sel.
-                    </span>
-                  )}
+                  <span className="ml-auto font-mono text-xs text-neutral-600">
+                    {filtersActive || filter
+                      ? `${filteredChapters.length} filtrados · `
+                      : ''}
+                    {selected.size} / {sortedChapters.length} sel.
+                  </span>
                 </div>
               </div>
 
               {/* Linhas de capítulos */}
               <ChapterList
-                chapters={filteredChapters}
+                chapters={visibleChapters}
                 selected={selected}
                 onToggle={toggleChapter}
                 bare
               />
+              {/* Sentinela do scroll infinito */}
+              {chaptersHasMore && (
+                <div
+                  ref={chapterSentinelRef}
+                  className="py-3 text-center text-[11px] text-neutral-700"
+                >
+                  carregando mais…
+                </div>
+              )}
             </div>
           </div>
 
