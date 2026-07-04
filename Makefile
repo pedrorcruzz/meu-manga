@@ -24,7 +24,9 @@ start: $(RUN_DIR) ## Compila e sobe backend + frontend (produção, estável) e 
 	@cd $(BACKEND_DIR) && $(GO) run ./cmd/server > ../../$(RUN_DIR)/backend.log 2>&1 & echo $$! > $(RUN_DIR)/backend.pid
 	@echo "→ subindo frontend (:3000)…"
 	@cd $(FRONTEND_DIR) && PORT=3000 node .output/server/index.mjs > ../../$(RUN_DIR)/frontend.log 2>&1 & echo $$! > $(RUN_DIR)/frontend.pid
-	@echo "→ aguardando o frontend subir…"
+	@echo "→ aguardando o backend ficar pronto (:8080)…"
+	@for i in $$(seq 1 60); do curl -sf -o /dev/null http://localhost:8080/api/health && break; sleep 1; done
+	@echo "→ aguardando o frontend subir (:3000)…"
 	@for i in $$(seq 1 40); do curl -s -o /dev/null http://localhost:3000 && break; sleep 1; done
 	@echo "✓ app em http://localhost:3000 — abrindo no navegador…"
 	@open http://localhost:3000 2>/dev/null || xdg-open http://localhost:3000 2>/dev/null || true
@@ -55,7 +57,9 @@ localhost: $(RUN_DIR) ## Igual ao start, mas em modo dev (Vite HMR, sem build)
 	@cd $(BACKEND_DIR) && $(GO) run ./cmd/server > ../../$(RUN_DIR)/backend.log 2>&1 & echo $$! > $(RUN_DIR)/backend.pid
 	@echo "→ subindo frontend em dev (:3000)…"
 	@cd $(FRONTEND_DIR) && $(BUN) run dev > ../../$(RUN_DIR)/frontend.log 2>&1 & echo $$! > $(RUN_DIR)/frontend.pid
-	@echo "→ aguardando o frontend subir…"
+	@echo "→ aguardando o backend ficar pronto (:8080)…"
+	@for i in $$(seq 1 60); do curl -sf -o /dev/null http://localhost:8080/api/health && break; sleep 1; done
+	@echo "→ aguardando o frontend subir (:3000)…"
 	@for i in $$(seq 1 40); do curl -s -o /dev/null http://localhost:3000 && break; sleep 1; done
 	@echo "✓ dev em http://localhost:3000 (HMR) — abrindo no navegador…"
 	@open http://localhost:3000 2>/dev/null || xdg-open http://localhost:3000 2>/dev/null || true
