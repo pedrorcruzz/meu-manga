@@ -26,7 +26,7 @@
 <br>
 
 <details open>
-<summary><strong>📖 Sobre</strong></summary>
+<summary><strong>Sobre</strong></summary>
 
 <br>
 
@@ -41,8 +41,8 @@ A ideia é ser um "WeebCentral" para a comunidade, começando pelo PT-BR.
 
 </details>
 
-<details>
-<summary><strong>🧩 Requisitos</strong></summary>
+<details open>
+<summary><strong>Requisitos</strong></summary>
 
 <br>
 
@@ -59,8 +59,8 @@ use outro navegador Chromium, como Brave ou Edge.
 
 </details>
 
-<details>
-<summary><strong>⚙️ Instalação</strong></summary>
+<details open>
+<summary><strong>Instalação</strong></summary>
 
 <br>
 
@@ -73,7 +73,7 @@ make install
 </details>
 
 <details open>
-<summary><strong>🚀 Como usar</strong></summary>
+<summary><strong>Como usar</strong></summary>
 
 <br>
 
@@ -83,8 +83,8 @@ make
 
 Isso compila e sobe tudo e abre o navegador em `http://localhost:3000`.
 
-<details>
-<summary><strong>Sakura Mangás</strong> (clique para abrir)</summary>
+<details open>
+<summary><strong>Sakura Mangás</strong></summary>
 
 <br>
 
@@ -113,8 +113,8 @@ Downloads/
 
 </details>
 
-<details>
-<summary><strong>🛠️ Comandos</strong></summary>
+<details open>
+<summary><strong>Comandos</strong></summary>
 
 <br>
 
@@ -132,8 +132,8 @@ backend e o frontend e liberam as portas 8080 e 3000.
 
 </details>
 
-<details>
-<summary><strong>🔌 Conectores</strong></summary>
+<details open>
+<summary><strong>Conectores</strong></summary>
 
 <br>
 
@@ -146,5 +146,5 @@ O Meu Mangá busca os mangás através de conectores. Cada site é um conector.
 <br>
 
 <p align="center">
-  ⭐ <strong>Se o Meu Mangá te ajudou, deixa uma estrela no repositório!</strong> Ajuda muito o projeto a crescer. ⭐
+  <strong>Se o Meu Mangá te ajudou, deixa uma estrela no repositório!</strong> Ajuda muito o projeto a crescer.
 </p>
