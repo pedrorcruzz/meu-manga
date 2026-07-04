@@ -38,12 +38,6 @@ baixa tudo em JPGs numerados, prontos pro seu leitor ou pro Kindle.
 - <a href="https://bun.sh/" target="_blank" rel="noreferrer">Bun</a> (build e dependências do frontend)
 - Um navegador Chromium que você use (Chrome, Brave, Edge, Dia, Arc, Vivaldi, Opera)
 
-**Sistemas:** roda em macOS, Linux e Windows. O app lê o cookie do seu navegador para
-passar o Cloudflare (Keychain no macOS, Secret Service no Linux, DPAPI no Windows).
-Testado principalmente no macOS; feedback de Linux e Windows é bem-vindo. No Windows,
-versões recentes do Chrome com *app-bound encryption* podem não funcionar; nesse caso
-use outro navegador Chromium, como Brave ou Edge.
-
 ### 1. Instalação
 
 No terminal, clone o projeto, entre na pasta e instale as dependências:
