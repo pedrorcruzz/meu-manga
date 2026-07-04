@@ -46,6 +46,8 @@ use outro navegador Chromium, como Brave ou Edge.
 
 ### Instalação
 
+No terminal, clone o projeto, entre na pasta e instale as dependências:
+
 ```bash
 git clone https://github.com/pedrorcruzz/meu-manga.git
 cd meu-manga
@@ -53,6 +55,8 @@ make install
 ```
 
 ### Como usar
+
+No terminal, dentro da pasta do projeto, rode:
 
 ```bash
 make
@@ -87,14 +91,14 @@ ou clicando no botão **Encerrar** no canto superior direito do app. Os dois des
 backend e o frontend e liberam as portas 8080 e 3000.
 
 <details open>
-<summary><h3>Conectores</h3></summary>
+<summary>🔌 <strong>Conectores</strong></summary>
 
 <br>
 
 O Meu Mangá busca os mangás através de conectores. Cada site é um conector.
 
 <details open>
-<summary><h4>Sakura Mangás</h4></summary>
+<summary>🌸 <strong>Sakura Mangás</strong></summary>
 
 <br>
 
@@ -114,5 +118,5 @@ capítulo precisa; é só abrir ele no navegador e resolver.
 <br>
 
 <p align="center">
-  <strong>Se o Meu Mangá te ajudou, deixa uma estrela no repositório!</strong> Ajuda muito o projeto a crescer.
+  ⭐ <strong>Se o Meu Mangá te ajudou, deixa uma estrela no repositório!</strong> Ajuda muito o projeto a crescer. ⭐
 </p>
