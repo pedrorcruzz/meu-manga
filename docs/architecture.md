@@ -88,6 +88,7 @@ backend re-reads it. See [sites/sakura.md](sites/sakura.md) for the full map.
 | GET | `/api/downloads` | job summaries |
 | GET | `/api/downloads/{jobId}` | job detail (per-chapter status) |
 | DELETE | `/api/downloads/{jobId}` | cancel a job |
+| POST | `/api/preview` | body `{source, chapter, count}` → `{images:[data:image/jpeg;base64,...]}` — first N pages as JPEG thumbnails |
 | GET | `/api/events` | SSE stream of `{type, jobId, chapterNumber, page, totalPages, message, status}` |
 
 `type` ∈ `progress` | `chapter_done` | `job_done` | `error`.

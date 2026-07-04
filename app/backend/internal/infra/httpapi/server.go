@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ type Deps struct {
 	Downloads *usecase.Downloader
 	Settings  *usecase.Settings
 	Events    *usecase.EventBus
+	Previewer *usecase.Previewer
 	Session   domain.SessionProvider
 	Host      string
 	// Probe faz uma requisição real leve para checar se a sessão passa o Cloudflare.
@@ -69,6 +71,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/downloads/{id}/chapters/{idx}/pages/{name}", s.getPage)
 	s.mux.HandleFunc("DELETE /api/downloads/{id}/chapters/{idx}/pages/{name}", s.deletePage)
 	s.mux.HandleFunc("GET /api/events", s.events)
+	s.mux.HandleFunc("POST /api/preview", s.preview)
 }
 
 // chapterLoc resolve (título, volume, rótulo do capítulo) de um capítulo de um job.
@@ -253,8 +256,8 @@ func decodeCover(dataURL string) ([]byte, error) {
 		return nil, nil
 	}
 	raw := dataURL
-	if i := strings.Index(dataURL, "base64,"); i >= 0 {
-		raw = dataURL[i+len("base64,"):]
+	if _, after, found := strings.Cut(dataURL, "base64,"); found {
+		raw = after
 	}
 	decoded, err := base64.StdEncoding.DecodeString(raw)
 	if err != nil {
@@ -314,11 +317,40 @@ func (s *Server) pickFolder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"downloadDir": dir})
 }
 
+type previewReq struct {
+	Source  string         `json:"source"`
+	Chapter domain.Chapter `json:"chapter"`
+	Count   int            `json:"count"`
+}
+
+func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
+	var req previewReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Source == "" {
+		writeError(w, http.StatusBadRequest, "missing source")
+		return
+	}
+	imgs, err := s.deps.Previewer.Preview(r.Context(), req.Source, req.Chapter, req.Count)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	if imgs == nil {
+		imgs = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"images": imgs})
+}
+
 func writeUseErr(w http.ResponseWriter, err error) {
-	switch err {
-	case domain.ErrSourceNotFound, domain.ErrJobNotFound, domain.ErrNotFound:
+	switch {
+	case errors.Is(err, domain.ErrSourceNotFound),
+		errors.Is(err, domain.ErrJobNotFound),
+		errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
-	case domain.ErrNoSession:
+	case errors.Is(err, domain.ErrNoSession):
 		writeError(w, http.StatusFailedDependency, err.Error())
 	default:
 		writeError(w, http.StatusBadGateway, err.Error())

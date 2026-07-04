@@ -38,6 +38,8 @@ function ObraPage() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitSessionError, setSubmitSessionError] = useState(false)
+  // null = sem override (usa o título original); string = título editado pelo usuário
+  const [titleOverride, setTitleOverride] = useState<string | null>(null)
 
   const isSessionError = rawError instanceof NoSessionError
 
@@ -91,7 +93,7 @@ function ObraPage() {
       const body: DownloadRequest = {
         source,
         slug,
-        title: data.manga.title,
+        title: titleOverride ?? data.manga.title,
         order,
         chapters: chapters.map((c) => ({
           id: c.id,
@@ -174,15 +176,30 @@ function ObraPage() {
           />
         )}
         <div className="flex flex-col justify-end gap-1.5 pb-1">
-          <h1 className="text-2xl font-bold leading-tight tracking-tight text-neutral-100 sm:text-3xl">
-            {data.manga.title}
-          </h1>
+          <input
+            type="text"
+            value={titleOverride ?? data.manga.title}
+            onChange={(e) => setTitleOverride(e.target.value)}
+            className="-mx-1 w-full rounded border border-transparent bg-transparent px-1 text-2xl font-bold leading-tight tracking-tight text-neutral-100 transition-colors focus:border-neutral-600 focus:outline-none sm:text-3xl"
+            aria-label="Título da obra (nome da pasta no disco)"
+            title="Edite para mudar o nome da pasta de destino"
+          />
           <div className="flex flex-wrap items-center gap-2">
             <span className="flex items-center gap-1.5 rounded-md bg-neutral-800 px-2.5 py-1 font-mono text-xs font-semibold text-neutral-300">
               <BookOpen size={13} aria-hidden="true" />
               {sortedChapters.length} capítulos
             </span>
             <span className="font-mono text-xs text-neutral-600">{source}</span>
+            <span className="font-mono text-xs text-neutral-700">pasta no disco</span>
+            {titleOverride !== null && titleOverride !== data.manga.title && (
+              <button
+                type="button"
+                onClick={() => setTitleOverride(null)}
+                className="font-mono text-xs text-neutral-500 underline transition-colors hover:text-neutral-200"
+              >
+                restaurar título original
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -356,6 +373,7 @@ function ObraPage() {
       {/* ── Modo volumes ──────────────────────────────────────────────────────── */}
       {mode === 'volume' && (
         <VolumeBuilder
+          source={source}
           chapters={sortedChapters}
           submitting={submitting}
           onDownload={handleVolumeDownload}

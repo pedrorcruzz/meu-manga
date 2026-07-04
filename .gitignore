@@ -1,5 +1,6 @@
 # sistema
 .DS_Store
+._*
 
 # dependências
 node_modules/

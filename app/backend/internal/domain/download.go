@@ -4,11 +4,11 @@ package domain
 type JobStatus string
 
 const (
-	StatusQueued      JobStatus = "queued"
-	StatusRunning     JobStatus = "running"
-	StatusCompleted   JobStatus = "completed"
-	StatusFailed      JobStatus = "failed"
-	StatusCanceled    JobStatus = "canceled"
+	StatusQueued    JobStatus = "queued"
+	StatusRunning   JobStatus = "running"
+	StatusCompleted JobStatus = "completed"
+	StatusFailed    JobStatus = "failed"
+	StatusCanceled  JobStatus = "canceled"
 )
 
 // ChapterTask tracks one chapter inside a job.

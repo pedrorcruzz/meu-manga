@@ -1,8 +1,14 @@
 // Card de volume individual — nome editável, capa, capítulos como chips, pull-next.
 
 import { useRef, useState, type ChangeEvent } from 'react'
-import { ArrowRight, ImagePlus, Trash2, X } from 'lucide-react'
+import { ArrowRight, ImagePlus, Loader2, Trash2, X } from 'lucide-react'
 import type { Chapter } from '~/api/client'
+
+/** Estado de pré-visualização das primeiras páginas do 1º capítulo de um volume. */
+export type PreviewState =
+  | { status: 'loading' }
+  | { status: 'loaded'; images: string[] }
+  | { status: 'error' }
 
 /** Estado local de um volume no VolumeBuilder. */
 export interface Volume {
@@ -53,6 +59,8 @@ interface VolumeCardProps {
   onRemove: () => void
   /** Puxa os próximos n capítulos não atribuídos para este volume. */
   onPullNext: (n: number) => void
+  /** Estado de pré-visualização das primeiras páginas do 1º capítulo. */
+  preview?: PreviewState
 }
 
 export function VolumeCard({
@@ -63,6 +71,7 @@ export function VolumeCard({
   onCoverChange,
   onRemove,
   onPullNext,
+  preview,
 }: VolumeCardProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [pullN, setPullN] = useState('10')
@@ -254,6 +263,39 @@ export function VolumeCard({
           )}
         </div>
       </div>
+
+      {/* Pré-visualização das primeiras páginas do 1º capítulo */}
+      {preview && count > 0 && (
+        <div className="border-t border-neutral-800/60 px-4 py-3 space-y-2">
+          <p className="text-[10px] leading-snug text-neutral-600">
+            Primeiras páginas do 1º capítulo — confira se a capa já veio na imagem.
+          </p>
+          {preview.status === 'loading' && (
+            <div className="flex items-center gap-1.5 text-neutral-600">
+              <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+              <span className="text-[10px]">Carregando preview…</span>
+            </div>
+          )}
+          {preview.status === 'loaded' && preview.images.length > 0 && (
+            <div className="flex gap-1.5">
+              {preview.images.map((img, i) => (
+                <img
+                  key={i}
+                  src={img}
+                  alt={`Pág. ${i + 1} do 1º capítulo`}
+                  className="aspect-[2/3] h-20 w-auto rounded object-cover"
+                />
+              ))}
+            </div>
+          )}
+          {preview.status === 'loaded' && preview.images.length === 0 && (
+            <p className="text-[10px] italic text-neutral-700">sem páginas</p>
+          )}
+          {preview.status === 'error' && (
+            <p className="text-[10px] italic text-neutral-600">preview indisponível</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 // Construtor de volumes — automático ("Volume Inteligente") ou manual em dois painéis.
 
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -13,8 +13,8 @@ import {
   Search,
   Zap,
 } from 'lucide-react'
-import type { Chapter, VolumeInput } from '~/api/client'
-import { VolumeCard, type Volume } from './VolumeCard'
+import { api, type Chapter, type VolumeInput } from '~/api/client'
+import { VolumeCard, type Volume, type PreviewState } from './VolumeCard'
 
 let _volCounter = 0
 function nextVolId(): string {
@@ -72,6 +72,8 @@ function buildSakuraVolumes(chapters: Chapter[]): Volume[] {
 }
 
 interface VolumeBuilderProps {
+  /** Source id da obra, ex.: "sakura". Necessário para o endpoint de preview. */
+  source: string
   /** Capítulos já ordenados pelo modo atual (crescente ou decrescente). */
   chapters: Chapter[]
   submitting: boolean
@@ -79,6 +81,7 @@ interface VolumeBuilderProps {
 }
 
 export function VolumeBuilder({
+  source,
   chapters,
   submitting,
   onDownload,
@@ -92,6 +95,17 @@ export function VolumeBuilder({
   // ── Carousel state ───────────────────────────────────────────────────────────
   const [currentVolIdx, setCurrentVolIdx] = useState(0)
   const [jumpQuery, setJumpQuery] = useState('')
+
+  // ── Preview state ────────────────────────────────────────────────────────────
+  /** Cache de imagens de preview, persistente entre gerações. Chave: `${chapter.id}:3`. */
+  const previewCacheRef = useRef<Map<string, string[]>>(new Map())
+  /** Número da epoch de fetch atual — incrementado a cada geração para cancelar fetches obsoletos. */
+  const fetchEpochRef = useRef(0)
+  const [volumePreviews, setVolumePreviews] = useState<Record<string, PreviewState>>({})
+
+  // ── Success animation state ──────────────────────────────────────────────────
+  const [sakuraSuccess, setSakuraSuccess] = useState(false)
+  const [applySuccess, setApplySuccess] = useState(false)
 
   // ── Estado derivado ──────────────────────────────────────────────────────────
 
@@ -147,6 +161,61 @@ export function VolumeBuilder({
 
   const totalAssigned = chapters.length - unassigned.length
 
+  // ── Preview fetch (2 workers em paralelo, cache por chapter id) ─────────────
+
+  function triggerPreviews(vols: Volume[]) {
+    const epoch = ++fetchEpochRef.current
+    setVolumePreviews({})
+
+    const tasks = vols.filter((v) => v.chapters.length > 0)
+    if (tasks.length === 0) return
+
+    let cursor = 0
+
+    async function worker() {
+      while (true) {
+        if (fetchEpochRef.current !== epoch) return
+        const idx = cursor++
+        if (idx >= tasks.length) return
+
+        const vol = tasks[idx]
+        const ch = vol.chapters[0]
+        const key = `${ch.id}:3`
+
+        if (previewCacheRef.current.has(key)) {
+          if (fetchEpochRef.current === epoch) {
+            setVolumePreviews((prev) => ({
+              ...prev,
+              [vol.id]: { status: 'loaded', images: previewCacheRef.current.get(key)! },
+            }))
+          }
+          continue
+        }
+
+        if (fetchEpochRef.current === epoch) {
+          setVolumePreviews((prev) => ({ ...prev, [vol.id]: { status: 'loading' } }))
+        }
+
+        try {
+          const res = await api.previewChapter(source, ch, 3)
+          previewCacheRef.current.set(key, res.images)
+          if (fetchEpochRef.current === epoch) {
+            setVolumePreviews((prev) => ({
+              ...prev,
+              [vol.id]: { status: 'loaded', images: res.images },
+            }))
+          }
+        } catch {
+          if (fetchEpochRef.current === epoch) {
+            setVolumePreviews((prev) => ({ ...prev, [vol.id]: { status: 'error' } }))
+          }
+        }
+      }
+    }
+
+    void Promise.all([worker(), worker()])
+  }
+
   // ── Presets automáticos ──────────────────────────────────────────────────────
 
   function generateVolumes() {
@@ -164,6 +233,11 @@ export function VolumeBuilder({
     setCurrentVolIdx(0)
     setTargetVolId(newVols[0]?.id ?? '')
     setLeftSelected(new Set())
+    if (newVols.length > 0) {
+      setApplySuccess(true)
+      setTimeout(() => setApplySuccess(false), 700)
+    }
+    triggerPreviews(newVols)
   }
 
   function generateFromSakura() {
@@ -172,6 +246,11 @@ export function VolumeBuilder({
     setCurrentVolIdx(0)
     setTargetVolId(newVols[0]?.id ?? '')
     setLeftSelected(new Set())
+    if (newVols.length > 0) {
+      setSakuraSuccess(true)
+      setTimeout(() => setSakuraSuccess(false), 700)
+    }
+    triggerPreviews(newVols)
   }
 
   // ── Gestão de volumes ────────────────────────────────────────────────────────
@@ -359,7 +438,7 @@ export function VolumeBuilder({
               type="button"
               onClick={generateFromSakura}
               disabled={chapters.length === 0}
-              className="flex items-center gap-2 rounded-lg border border-indigo-700/50 bg-indigo-900/40 px-4 py-2 text-sm font-medium text-indigo-300 transition-colors hover:border-indigo-600/70 hover:bg-indigo-900/60 disabled:opacity-50"
+              className={`flex items-center gap-2 rounded-lg border border-indigo-700/50 bg-indigo-900/40 px-4 py-2 text-sm font-medium text-indigo-300 transition-colors hover:border-indigo-600/70 hover:bg-indigo-900/60 disabled:opacity-50${sakuraSuccess ? ' vol-success' : ''}`}
             >
               <BookOpen size={14} aria-hidden="true" />
               Volumes Inteligentes
@@ -384,7 +463,7 @@ export function VolumeBuilder({
               type="button"
               onClick={generateVolumes}
               disabled={chapters.length === 0}
-              className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-sm transition-colors hover:bg-neutral-700 disabled:opacity-50"
+              className={`rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-sm transition-colors hover:bg-neutral-700 disabled:opacity-50${applySuccess ? ' vol-success' : ''}`}
             >
               Aplicar
             </button>
@@ -672,6 +751,7 @@ export function VolumeBuilder({
                   onCoverChange={(url) => setCover(currentVol.id, url)}
                   onRemove={() => removeVolume(currentVol.id)}
                   onPullNext={(n) => pullNext(currentVol.id, n)}
+                  preview={volumePreviews[currentVol.id]}
                 />
               )}
             </div>

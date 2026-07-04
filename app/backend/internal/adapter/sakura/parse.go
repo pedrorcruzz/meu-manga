@@ -12,16 +12,16 @@ import (
 
 // searchItem espelha o JSON do endpoint de busca do Sakura.
 type searchItem struct {
-	ID      json.Number `json:"id"`
-	Titulo  string      `json:"titulo"`
-	URL     string      `json:"url"`
-	Thumb   string      `json:"thumb_url"`
-	Rating  string      `json:"avaliacao"`
-	Status  string      `json:"status"`
-	Demo    string      `json:"demografia"`
-	Ano     json.Number `json:"ano"`
-	Views   string      `json:"views"`
-	Favs    string      `json:"favoritos"`
+	ID     json.Number `json:"id"`
+	Titulo string      `json:"titulo"`
+	URL    string      `json:"url"`
+	Thumb  string      `json:"thumb_url"`
+	Rating string      `json:"avaliacao"`
+	Status string      `json:"status"`
+	Demo   string      `json:"demografia"`
+	Ano    json.Number `json:"ano"`
+	Views  string      `json:"views"`
+	Favs   string      `json:"favoritos"`
 }
 
 // parseSearch converts the search JSON payload into normalized mangas.

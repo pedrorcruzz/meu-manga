@@ -35,6 +35,20 @@
   animation: bar-shimmer 1.5s ease-in-out infinite;
 }
 
+/* Flash de sucesso para geração de volumes */
+@keyframes vol-success {
+  0% {
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.7), 0 0 14px rgba(99, 102, 241, 0.35);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0), 0 0 0 rgba(99, 102, 241, 0);
+  }
+}
+
+.vol-success {
+  animation: vol-success 700ms ease-out forwards;
+}
+
 /* Homescreen retrô/arcade (sutil): grade CRT, glow e cursor piscando */
 .retro-grid {
   background-image:
