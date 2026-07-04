@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  🇧🇷
+  <img alt="Brasil" src="https://flagcdn.com/br.svg" width="60" />
 </p>
 
 <p align="center">
