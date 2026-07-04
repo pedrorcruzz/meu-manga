@@ -34,10 +34,6 @@
 organizada. Você busca a obra, vê os capítulos, monta volumes (inclusive com capa) e
 baixa tudo em JPGs numerados, prontos pro seu leitor ou pro Kindle.
 
-Por enquanto o app usa apenas o conector do
-<a href="https://sakuramangas.org/" target="_blank" rel="noreferrer">Sakura Mangás</a>,
-então só encontra mangás em PT-BR. A arquitetura já é feita para múltiplos conectores.
-
 </details>
 
 <details open>
