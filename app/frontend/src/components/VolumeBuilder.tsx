@@ -1,6 +1,6 @@
 // Construtor de volumes — automático ("Volume Inteligente") ou manual em dois painéis.
 
-import { useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Layers,
   Plus,
   Search,
   X,
@@ -110,6 +111,19 @@ export function VolumeBuilder({
     title: string
     source: 'sakura' | 'count'
   } | null>(null)
+
+  // Popup do montador manual.
+  const [manualOpen, setManualOpen] = useState(false)
+
+  // ESC fecha o montador manual.
+  useEffect(() => {
+    if (!manualOpen || typeof window === 'undefined') return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setManualOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [manualOpen])
 
   // ── Carousel state ───────────────────────────────────────────────────────────
   const [currentVolIdx, setCurrentVolIdx] = useState(0)
@@ -571,6 +585,30 @@ export function VolumeBuilder({
         </div>
       </div>
 
+      {/* ── Montador manual (abre popup) ────────────────────────────────────── */}
+      <div className="rounded-xl border border-neutral-700/40 bg-neutral-900/50 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Layers size={14} className="text-indigo-400" aria-hidden="true" />
+            <span className="font-mono text-xs font-semibold uppercase tracking-wider text-neutral-300">
+              Montar manualmente
+            </span>
+            <span className="text-xs text-neutral-600">
+              — organize capítulo por capítulo em cada volume
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setManualOpen(true)}
+            disabled={chapters.length === 0}
+            className="flex items-center gap-2 rounded-lg border border-indigo-700/50 bg-indigo-900/40 px-4 py-2 text-sm font-medium text-indigo-300 transition-colors hover:border-indigo-600/70 hover:bg-indigo-900/60 disabled:opacity-50 sm:ml-auto"
+          >
+            <Plus size={14} aria-hidden="true" />
+            Abrir montador
+          </button>
+        </div>
+      </div>
+
       {/* ── Resumo ──────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
         <span className="text-neutral-500">
@@ -589,8 +627,50 @@ export function VolumeBuilder({
         )}
       </div>
 
-      {/* ── Layout em duas colunas ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[2fr_3fr]">
+      {/* ── Montador manual (em popup) ──────────────────────────────────────── */}
+      {manualOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Montar volumes manualmente"
+          className="vol-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setManualOpen(false)
+          }}
+        >
+          <div className="vol-modal-panel flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl">
+            {/* Cabeçalho */}
+            <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
+              <div className="flex items-center gap-2.5">
+                <Layers
+                  size={18}
+                  className="text-indigo-400"
+                  aria-hidden="true"
+                />
+                <div>
+                  <h2 className="font-semibold text-neutral-100">
+                    Montar volumes manualmente
+                  </h2>
+                  <p className="text-xs text-neutral-500">
+                    {volumes.length}{' '}
+                    {volumes.length === 1 ? 'volume' : 'volumes'} ·{' '}
+                    {totalAssigned}/{chapters.length} capítulos atribuídos
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualOpen(false)}
+                aria-label="Fechar"
+                className="rounded-lg p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Corpo com scroll */}
+            <div className="retro-scroll min-h-0 flex-1 overflow-y-auto p-5">
+              <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[2fr_3fr]">
         {/* Painel de capítulos (esquerda) */}
         <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/40">
           {/* Scroll container — header sticky dentro dele */}
@@ -854,7 +934,7 @@ export function VolumeBuilder({
             <div className="rounded-xl border border-dashed border-neutral-800 py-12 text-center">
               <p className="text-sm text-neutral-600">Nenhum volume ainda.</p>
               <p className="mt-1 text-xs text-neutral-700">
-                Use "Volume Inteligente" acima ou crie um manualmente.
+                Clique em "Novo volume" para começar a montar.
               </p>
             </div>
           ) : (
@@ -955,9 +1035,41 @@ export function VolumeBuilder({
             </div>
           )}
         </div>
-      </div>
+              </div>
+            </div>
 
-      {/* ── Botão de download ────────────────────────────────────────────────── */}
+            {/* Rodapé do montador */}
+            <div className="flex flex-wrap items-center gap-3 border-t border-neutral-800 px-5 py-4">
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={volumes.length === 0 || submitting}
+                className="flex items-center gap-2 rounded-xl bg-zinc-100 px-5 py-2 font-semibold text-zinc-900 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download size={15} aria-hidden="true" />
+                {submitting
+                  ? 'Enviando…'
+                  : `Baixar ${volumes.length} ${volumes.length === 1 ? 'volume' : 'volumes'}`}
+              </button>
+              {unassigned.length > 0 && volumes.length > 0 && (
+                <p className="text-xs text-amber-400">
+                  {unassigned.length} sem volume não{' '}
+                  {unassigned.length !== 1 ? 'serão baixados' : 'será baixado'}.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setManualOpen(false)}
+                className="ml-auto rounded-xl border border-neutral-700 px-4 py-2 text-sm text-neutral-300 transition-colors hover:bg-neutral-800"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Botão de download (página) ──────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-4 border-t border-neutral-800 pt-5">
         <button
           type="button"
@@ -970,6 +1082,15 @@ export function VolumeBuilder({
             ? 'Enviando…'
             : `Baixar ${volumes.length} ${volumes.length === 1 ? 'volume' : 'volumes'}`}
         </button>
+        {volumes.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setManualOpen(true)}
+            className="rounded-xl border border-neutral-700 px-4 py-2.5 text-sm text-neutral-300 transition-colors hover:bg-neutral-800"
+          >
+            Editar volumes
+          </button>
+        )}
         {unassigned.length > 0 && volumes.length > 0 && (
           <p className="text-xs text-amber-400">
             {unassigned.length} capítulo{unassigned.length !== 1 ? 's' : ''} sem

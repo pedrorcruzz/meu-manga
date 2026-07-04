@@ -3,8 +3,16 @@
 // antes de confirmar. Usado tanto pelo preset do Sakura quanto pelo N-por-volume.
 
 import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Check, Layers, X } from 'lucide-react'
+import { BookOpen, Check, Layers, Search, X } from 'lucide-react'
 import type { Volume } from './VolumeCard'
+
+/** true se o volume bate com a busca (nome, rótulo ou número de capítulo). */
+function matchesQuery(vol: Volume, q: string): boolean {
+  if (!q) return true
+  if (vol.name.toLowerCase().includes(q)) return true
+  if (vol.label && vol.label.toLowerCase().includes(q)) return true
+  return vol.chapters.some((c) => c.number.toLowerCase().includes(q))
+}
 
 /** Faixa de capítulos de um volume, ex.: "Cap. 1 – 14" ou "Cap. 7". */
 function chapterRange(vol: Volume): string {
@@ -45,6 +53,14 @@ export function VolumeSelectModal({
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(volumes.map((v) => v.id)),
   )
+  const [query, setQuery] = useState('')
+
+  // Volumes visíveis após a busca — as ações de marcar operam sobre este subconjunto.
+  const visibleVolumes = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return volumes
+    return volumes.filter((v) => matchesQuery(v, q))
+  }, [volumes, query])
 
   // ESC fecha o popup.
   useEffect(() => {
@@ -58,6 +74,11 @@ export function VolumeSelectModal({
 
   const totalChapters = useMemo(
     () => volumes.reduce((sum, v) => sum + v.chapters.length, 0),
+    [volumes],
+  )
+  // Número real de cada volume (posição na lista completa), para o rótulo "VOLUME N".
+  const volNumber = useMemo(
+    () => new Map(volumes.map((v, i) => [v.id, i + 1])),
     [volumes],
   )
   const selectedChapters = useMemo(
@@ -77,18 +98,26 @@ export function VolumeSelectModal({
   }
 
   function selectAll() {
-    setSelected(new Set(volumes.map((v) => v.id)))
+    setSelected((prev) => {
+      const next = new Set(prev)
+      visibleVolumes.forEach((v) => next.add(v.id))
+      return next
+    })
   }
 
   function clearAll() {
-    setSelected(new Set())
+    setSelected((prev) => {
+      const next = new Set(prev)
+      visibleVolumes.forEach((v) => next.delete(v.id))
+      return next
+    })
   }
 
   function invert() {
     setSelected((prev) => {
-      const next = new Set<string>()
-      volumes.forEach((v) => {
-        if (!prev.has(v.id)) next.add(v.id)
+      const next = new Set(prev)
+      visibleVolumes.forEach((v) => {
+        next.has(v.id) ? next.delete(v.id) : next.add(v.id)
       })
       return next
     })
@@ -132,6 +161,35 @@ export function VolumeSelectModal({
           </button>
         </div>
 
+        {/* Barra de busca */}
+        <div className="border-b border-neutral-800 px-5 py-3">
+          <div className="relative">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"
+              aria-hidden="true"
+            />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar volume ou capítulo… (ex: V003, 3, 42)"
+              className="w-full rounded-lg border border-neutral-800 bg-neutral-800/60 py-2 pl-9 pr-9 text-sm placeholder:text-neutral-700 focus:border-neutral-600 focus:outline-none"
+              aria-label="Buscar volumes"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                aria-label="Limpar busca"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-neutral-600 transition-colors hover:text-neutral-300"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Barra de seleção */}
         <div className="flex flex-wrap items-center gap-3 border-b border-neutral-800 bg-neutral-900/60 px-5 py-2.5">
           <button
@@ -139,7 +197,7 @@ export function VolumeSelectModal({
             onClick={selectAll}
             className="text-xs font-medium text-neutral-300 transition-colors hover:text-white"
           >
-            Selecionar tudo
+            {query ? 'Marcar filtrados' : 'Selecionar tudo'}
           </button>
           <span className="text-neutral-700" aria-hidden="true">
             ·
@@ -149,7 +207,7 @@ export function VolumeSelectModal({
             onClick={clearAll}
             className="text-xs font-medium text-neutral-400 transition-colors hover:text-neutral-200"
           >
-            Desmarcar tudo
+            {query ? 'Desmarcar filtrados' : 'Desmarcar tudo'}
           </button>
           <span className="text-neutral-700" aria-hidden="true">
             ·
@@ -162,6 +220,7 @@ export function VolumeSelectModal({
             Inverter
           </button>
           <span className="ml-auto font-mono text-xs text-neutral-500">
+            {query ? `${visibleVolumes.length} achados · ` : ''}
             {selected.size}/{volumes.length} vol.
           </span>
         </div>
@@ -172,10 +231,15 @@ export function VolumeSelectModal({
             <p className="py-10 text-center text-sm text-neutral-600">
               Nenhum volume para montar.
             </p>
+          ) : visibleVolumes.length === 0 ? (
+            <p className="py-10 text-center text-sm text-neutral-600">
+              Nenhum volume encontrado para “{query}”.
+            </p>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-              {volumes.map((vol, i) => {
+              {visibleVolumes.map((vol) => {
                 const checked = selected.has(vol.id)
+                const num = volNumber.get(vol.id) ?? 0
                 return (
                   <button
                     key={vol.id}
@@ -225,7 +289,7 @@ export function VolumeSelectModal({
                             Volume
                           </span>
                           <span className="font-mono text-2xl font-bold leading-none text-neutral-200">
-                            {i + 1}
+                            {num}
                           </span>
                         </div>
                       )}
