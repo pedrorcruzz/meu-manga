@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  🇧🇷
+</p>
+
+<p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white" />
   <img alt="Linux" src="https://img.shields.io/badge/Linux-1a1a1a?logo=linux&logoColor=white" />
   <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D6?logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2ZmZiI%2BPHBhdGggZD0iTTAgMy40IDkuOCAydjkuNUgwem0xMC45LTEuNUwyNCAwdjExLjRIMTAuOXpNMCAxMi42aDkuOHY5LjVMMCAyMC42em0xMC45IDBIMjRWMjRsLTEzLjEtMS45eiIvPjwvc3ZnPg%3D%3D" />
