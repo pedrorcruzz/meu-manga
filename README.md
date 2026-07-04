@@ -26,7 +26,7 @@
 <br>
 
 <details open>
-<summary><strong>Sobre</strong></summary>
+<summary><h3>Sobre</h3></summary>
 
 <br>
 
@@ -37,7 +37,7 @@ baixa tudo em JPGs numerados, prontos pro seu leitor ou pro Kindle.
 </details>
 
 <details open>
-<summary><strong>Requisitos</strong></summary>
+<summary><h3>Requisitos</h3></summary>
 
 <br>
 
@@ -55,7 +55,7 @@ use outro navegador Chromium, como Brave ou Edge.
 </details>
 
 <details open>
-<summary><strong>Instalação</strong></summary>
+<summary><h3>Instalação</h3></summary>
 
 <br>
 
@@ -68,7 +68,7 @@ make install
 </details>
 
 <details open>
-<summary><strong>Como usar</strong></summary>
+<summary><h3>Como usar</h3></summary>
 
 <br>
 
@@ -79,7 +79,7 @@ make
 Isso compila e sobe tudo e abre o navegador em `http://localhost:3000`.
 
 <details open>
-<summary><strong>Sakura Mangás</strong></summary>
+<summary><h4>Sakura Mangás</h4></summary>
 
 <br>
 
@@ -109,7 +109,7 @@ Downloads/
 </details>
 
 <details open>
-<summary><strong>Comandos</strong></summary>
+<summary><h3>Comandos</h3></summary>
 
 <br>
 
@@ -128,7 +128,7 @@ backend e o frontend e liberam as portas 8080 e 3000.
 </details>
 
 <details open>
-<summary><strong>Conectores</strong></summary>
+<summary><h3>Conectores</h3></summary>
 
 <br>
 
