@@ -32,12 +32,16 @@ baixa tudo em JPGs numerados, prontos pro seu leitor ou pro Kindle.
 
 ## Screenshots
 
-> Coloque suas capturas em `docs/screenshots/` com estes nomes:
-
 |  |  |
-|--|--|
-| ![Home](docs/screenshots/home.png) | ![Buscar](docs/screenshots/busca.png) |
+|:--:|:--:|
+| ![Home](docs/screenshots/home.png) | ![Buscar mangá](docs/screenshots/busca.png) |
 | ![Montar volumes](docs/screenshots/volumes.png) | ![Downloads](docs/screenshots/downloads.png) |
+
+<p align="center">
+  <em>Preview das páginas baixadas (dá pra remover as que não quiser):</em><br />
+  <img src="docs/screenshots/preview.png" alt="Preview das páginas de um capítulo baixado" width="900" />
+</p>
+
 
 ---
 
