@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -70,12 +71,20 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
-	// quit: encerra o frontend (vite) e o próprio backend, liberando as portas
+	// quit: encerra o frontend (dev e produção) e o próprio backend, liberando as portas
 	quit := func() {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			_ = exec.Command("pkill", "-f", "vite dev").Run()
-			_ = exec.Command("pkill", "-f", "bun run dev").Run()
+			// dev (vite/bun) e produção (node .output/server) — por padrão de processo
+			for _, pat := range []string{"vite dev", "bun run dev", ".output/server"} {
+				_ = exec.Command("pkill", "-f", pat).Run()
+			}
+			// fallback confiável: mata quem estiver ocupando a porta 3000 (frontend)
+			if out, err := exec.Command("lsof", "-ti", "tcp:3000").Output(); err == nil {
+				for _, pid := range strings.Fields(string(out)) {
+					_ = exec.Command("kill", pid).Run()
+				}
+			}
 			stop <- syscall.SIGTERM
 		}()
 	}
