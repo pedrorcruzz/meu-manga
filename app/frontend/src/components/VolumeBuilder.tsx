@@ -95,6 +95,8 @@ export function VolumeBuilder({
   const [leftFilter, setLeftFilter] = useState('')
   const [leftSelected, setLeftSelected] = useState<Set<string>>(new Set())
   const [targetVolId, setTargetVolId] = useState<string>('')
+  // Âncora para seleção em intervalo no pool (shift+clique).
+  const lastLeftRef = useRef<string | null>(null)
 
   // Filtros do pool: por volume da fonte e por estado de seleção/atribuição.
   const [volFilter, setVolFilter] = useState<'all' | 'with' | 'without'>('all')
@@ -422,13 +424,33 @@ export function VolumeBuilder({
 
   // ── Painel de capítulos (esquerda) ───────────────────────────────────────────
 
-  function toggleLeftChapter(id: string) {
+  function toggleLeftChapter(id: string, shiftKey = false) {
     if (assignedIds.has(id)) return
+    if (shiftKey && lastLeftRef.current) {
+      const a = filteredLeft.findIndex((c) => c.id === lastLeftRef.current)
+      const b = filteredLeft.findIndex((c) => c.id === id)
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a < b ? [a, b] : [b, a]
+        const target = !leftSelected.has(id)
+        setLeftSelected((prev) => {
+          const next = new Set(prev)
+          for (let i = lo; i <= hi; i++) {
+            const cid = filteredLeft[i].id
+            if (assignedIds.has(cid)) continue
+            target ? next.add(cid) : next.delete(cid)
+          }
+          return next
+        })
+        lastLeftRef.current = id
+        return
+      }
+    }
     setLeftSelected((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
+    lastLeftRef.current = id
   }
 
   function selectAllUnassignedFiltered() {
@@ -678,6 +700,9 @@ export function VolumeBuilder({
                 >
                   Limpar
                 </button>
+                <span className="hidden text-[11px] text-neutral-700 xl:inline">
+                  shift+clique = intervalo
+                </span>
                 <span className="ml-auto text-xs text-neutral-600">
                   {poolFiltersActive || leftFilter
                     ? `${filteredLeft.length} filtrados · `
@@ -701,19 +726,35 @@ export function VolumeBuilder({
                   const checked = leftSelected.has(c.id)
                   return (
                     <li key={c.id}>
-                      <label
-                        className={`flex items-center gap-2.5 px-3 py-2 transition-colors ${
+                      <div
+                        role="checkbox"
+                        aria-checked={checked}
+                        aria-disabled={assigned}
+                        tabIndex={assigned ? -1 : 0}
+                        onClick={(e) =>
+                          !assigned && toggleLeftChapter(c.id, e.shiftKey)
+                        }
+                        onKeyDown={(e) => {
+                          if (assigned) return
+                          if (e.key === ' ' || e.key === 'Enter') {
+                            e.preventDefault()
+                            toggleLeftChapter(c.id, e.shiftKey)
+                          }
+                        }}
+                        className={`flex select-none items-center gap-2.5 px-3 py-2 transition-colors focus:outline-none ${
                           assigned
                             ? 'cursor-default opacity-40'
-                            : 'cursor-pointer hover:bg-neutral-800/50'
+                            : 'cursor-pointer hover:bg-neutral-800/50 focus:bg-neutral-800/50'
                         }`}
                       >
                         <input
                           type="checkbox"
                           checked={checked}
                           disabled={assigned}
-                          onChange={() => toggleLeftChapter(c.id)}
-                          className="h-3.5 w-3.5 shrink-0 accent-zinc-400 disabled:opacity-40"
+                          readOnly
+                          tabIndex={-1}
+                          aria-hidden="true"
+                          className="pointer-events-none h-3.5 w-3.5 shrink-0 accent-zinc-400 disabled:opacity-40"
                         />
                         <span className="min-w-0 flex-1 truncate text-xs">
                           <span
@@ -736,7 +777,7 @@ export function VolumeBuilder({
                             aria-label="já atribuído"
                           />
                         )}
-                      </label>
+                      </div>
                     </li>
                   )
                 })

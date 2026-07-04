@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowLeft,
@@ -106,12 +106,36 @@ function ObraPage() {
     filteredChapters.length > 0 &&
     filteredChapters.every((c) => selected.has(c.id))
 
-  function toggleChapter(id: string) {
+  // Último capítulo alternado — âncora para seleção em intervalo (shift+clique).
+  const lastToggledRef = useRef<string | null>(null)
+
+  function toggleChapter(id: string, shiftKey = false) {
+    if (shiftKey && lastToggledRef.current) {
+      const a = filteredChapters.findIndex(
+        (c) => c.id === lastToggledRef.current,
+      )
+      const b = filteredChapters.findIndex((c) => c.id === id)
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a < b ? [a, b] : [b, a]
+        const target = !selected.has(id)
+        setSelected((prev) => {
+          const next = new Set(prev)
+          for (let i = lo; i <= hi; i++) {
+            const cid = filteredChapters[i].id
+            target ? next.add(cid) : next.delete(cid)
+          }
+          return next
+        })
+        lastToggledRef.current = id
+        return
+      }
+    }
     setSelected((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
+    lastToggledRef.current = id
   }
 
   function selectAllFiltered() {
@@ -466,6 +490,9 @@ function ObraPage() {
                       </button>
                     </>
                   )}
+                  <span className="hidden text-[11px] text-neutral-700 md:inline">
+                    shift+clique = intervalo
+                  </span>
                   <span className="ml-auto font-mono text-xs text-neutral-600">
                     {filtersActive || filter
                       ? `${filteredChapters.length} filtrados · `

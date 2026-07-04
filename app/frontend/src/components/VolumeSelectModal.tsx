@@ -17,6 +17,15 @@ function chapterRange(vol: Volume): string {
   return first === last ? `Cap. ${first}` : `Cap. ${first} – ${last}`
 }
 
+/** Lista completa dos capítulos para o tooltip da capa. */
+function chaptersTooltip(vol: Volume): string {
+  if (vol.chapters.length === 0) return 'Sem capítulos'
+  const nums = [...vol.chapters]
+    .sort((a, b) => parseFloat(a.number) - parseFloat(b.number))
+    .map((c) => c.number)
+  return `${vol.name} — Cap. ${nums.join(', ')}`
+}
+
 interface VolumeSelectModalProps {
   title: string
   /** Volumes propostos a exibir como capas. */
@@ -173,6 +182,7 @@ export function VolumeSelectModal({
                     type="button"
                     onClick={() => toggle(vol.id)}
                     aria-pressed={checked}
+                    title={chaptersTooltip(vol)}
                     className={`group relative flex flex-col overflow-hidden rounded-xl border text-left transition-all ${
                       checked
                         ? 'border-indigo-500/70 bg-indigo-950/30 ring-1 ring-indigo-500/40'
