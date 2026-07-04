@@ -25,21 +25,13 @@
 
 <br>
 
-<details open>
-<summary><h3>Sobre</h3></summary>
-
-<br>
+### Sobre
 
 **Meu Mangá** é um app web local (roda na sua máquina) para baixar mangás de forma
 organizada. Você busca a obra, vê os capítulos, monta volumes (inclusive com capa) e
 baixa tudo em JPGs numerados, prontos pro seu leitor ou pro Kindle.
 
-</details>
-
-<details open>
-<summary><h3>Requisitos</h3></summary>
-
-<br>
+### Requisitos
 
 - <a href="https://go.dev/dl/" target="_blank" rel="noreferrer">Go</a> 1.25 ou mais recente (backend)
 - <a href="https://nodejs.org/" target="_blank" rel="noreferrer">Node</a> (serve o frontend)
@@ -52,12 +44,7 @@ Testado principalmente no macOS; feedback de Linux e Windows é bem-vindo. No Wi
 versões recentes do Chrome com *app-bound encryption* podem não funcionar; nesse caso
 use outro navegador Chromium, como Brave ou Edge.
 
-</details>
-
-<details open>
-<summary><h3>Instalação</h3></summary>
-
-<br>
+### Instalação
 
 ```bash
 git clone https://github.com/pedrorcruzz/meu-manga.git
@@ -65,18 +52,46 @@ cd meu-manga
 make install
 ```
 
-</details>
-
-<details open>
-<summary><h3>Como usar</h3></summary>
-
-<br>
+### Como usar
 
 ```bash
 make
 ```
 
 Isso compila e sobe tudo e abre o navegador em `http://localhost:3000`.
+
+**Estrutura dos arquivos baixados:**
+
+```
+Downloads/
+└── Nome do Mangá/
+    └── Nome do Mangá V001/
+        └── Cap 1/
+            ├── 001.jpg
+            ├── 002.jpg
+            └── ...
+```
+
+### Comandos
+
+| Comando          | O que faz                                                        |
+|------------------|------------------------------------------------------------------|
+| `make`           | Compila e sobe backend e frontend (produção) e abre o navegador  |
+| `make start`     | Igual ao `make`                                                  |
+| `make localhost` | Sobe em modo dev (Vite HMR, hot-reload)                          |
+| `make stop`      | Encerra tudo, libera as portas e apaga os builds                 |
+| `make install`   | Baixa as dependências do backend e do frontend                   |
+
+**Encerrar o programa:** dá pra encerrar de duas formas, rodando `make stop` no terminal
+ou clicando no botão **Encerrar** no canto superior direito do app. Os dois desligam o
+backend e o frontend e liberam as portas 8080 e 3000.
+
+<details open>
+<summary><h3>Conectores</h3></summary>
+
+<br>
+
+O Meu Mangá busca os mangás através de conectores. Cada site é um conector.
 
 <details open>
 <summary><h4>Sakura Mangás</h4></summary>
@@ -93,48 +108,6 @@ Ao baixar muitos capítulos, o site pode pedir um captcha do leitor. O app avisa
 capítulo precisa; é só abrir ele no navegador e resolver.
 
 </details>
-
-**Estrutura dos arquivos baixados:**
-
-```
-Downloads/
-└── Nome do Mangá/
-    └── Nome do Mangá V001/
-        └── Cap 1/
-            ├── 001.jpg
-            ├── 002.jpg
-            └── ...
-```
-
-</details>
-
-<details open>
-<summary><h3>Comandos</h3></summary>
-
-<br>
-
-| Comando          | O que faz                                                        |
-|------------------|------------------------------------------------------------------|
-| `make`           | Compila e sobe backend e frontend (produção) e abre o navegador  |
-| `make start`     | Igual ao `make`                                                  |
-| `make localhost` | Sobe em modo dev (Vite HMR, hot-reload)                          |
-| `make stop`      | Encerra tudo, libera as portas e apaga os builds                 |
-| `make install`   | Baixa as dependências do backend e do frontend                   |
-
-**Encerrar o programa:** dá pra encerrar de duas formas, rodando `make stop` no terminal
-ou clicando no botão **Encerrar** no canto superior direito do app. Os dois desligam o
-backend e o frontend e liberam as portas 8080 e 3000.
-
-</details>
-
-<details open>
-<summary><h3>Conectores</h3></summary>
-
-<br>
-
-O Meu Mangá busca os mangás através de conectores. Cada site é um conector.
-
-- **Sakura Mangás:** mangás em português (PT-BR). É o conector disponível hoje.
 
 </details>
 
