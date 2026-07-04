@@ -1,0 +1,29 @@
+# sistema
+.DS_Store
+
+# dependências
+node_modules/
+
+# runtime / build
+.run/
+app/backend/bin/
+app/backend/coverage*.out
+app/frontend/.output/
+app/frontend/.nitro/
+app/frontend/dist/
+app/frontend/.vite/
+
+# rotas geradas pelo TanStack (regeneradas no build)
+app/frontend/src/routeTree.gen.ts
+
+# testes
+*_test.go
+
+# ferramentas de IA / notas internas
+CLAUDE.md
+.claude/
+TODO.md
+
+# binários locais
+app/backend/dbg
+app/backend/*-server

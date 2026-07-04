@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- dark zinc background -->
+  <rect width="32" height="32" rx="6" fill="#18181b"/>
+
+  <!-- book shadow / depth layer -->
+  <rect x="10" y="8" width="15" height="19" rx="2" fill="#27272a"/>
+
+  <!-- book body -->
+  <rect x="7" y="6" width="15" height="19" rx="2" fill="#3f3f46"/>
+
+  <!-- spine -->
+  <rect x="7" y="6" width="3.5" height="19" rx="1.5" fill="#52525b"/>
+  <!-- spine highlight -->
+  <rect x="7.5" y="7" width="1" height="17" rx="0.5" fill="#71717a" opacity="0.5"/>
+
+  <!-- manga panels on cover -->
+  <rect x="12.5" y="9" width="7" height="4.5" rx="1" fill="#27272a"/>
+  <rect x="12.5" y="14.5" width="3" height="7" rx="1" fill="#27272a"/>
+  <rect x="16.5" y="14.5" width="3" height="7" rx="1" fill="#27272a"/>
+
+  <!-- subtle page-edge lines on right side -->
+  <rect x="22" y="8" width="1.5" height="17" rx="0.5" fill="#3f3f46"/>
+  <rect x="23.5" y="9" width="1" height="15" rx="0.5" fill="#27272a"/>
+</svg>

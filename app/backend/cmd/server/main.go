@@ -1,0 +1,110 @@
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/exec"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"meumanga/internal/adapter/registry"
+	"meumanga/internal/adapter/sakura"
+	"meumanga/internal/config"
+	"meumanga/internal/infra/browser"
+	"meumanga/internal/infra/cookies"
+	"meumanga/internal/infra/dialog"
+	"meumanga/internal/infra/httpapi"
+	"meumanga/internal/infra/httpclient"
+	"meumanga/internal/infra/storage"
+	"meumanga/internal/usecase"
+)
+
+func main() {
+	cfg := config.Load()
+
+	// sessão Cloudflare reaproveitada do navegador real do usuário (auto-detecta
+	// qual Chromium — Dia, Chrome, Brave, Edge… — tem o cookie do Sakura)
+	home, _ := os.UserHomeDir()
+	session := cookies.New(cookies.DefaultBrowsers(home), cfg.UserAgent)
+
+	// motor de browser headless (capítulos + download)
+	engine := browser.NewEngine(cfg.BrowserBin, cfg.Headless, session)
+	defer engine.Close()
+
+	openPage := func(ctx context.Context, host string) (sakura.Page, error) {
+		p, err := engine.Open(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		return p, nil
+	}
+
+	// cliente HTTP com fingerprint de Chrome (busca)
+	client, err := httpclient.New(sakura.Host, session)
+	if err != nil {
+		log.Fatalf("http client: %v", err)
+	}
+
+	reg := registry.New()
+	reg.Register(sakura.New(client, openPage))
+
+	store := storage.New(cfg.DownloadDir)
+	if err := store.SetRoot(cfg.DownloadDir); err != nil {
+		log.Fatalf("download dir: %v", err)
+	}
+
+	bus := usecase.NewEventBus()
+	library := usecase.NewLibrary(reg)
+	downloader := usecase.NewDownloader(reg, store, bus)
+	settings := usecase.NewSettings(store, dialog.New())
+
+	// sonda leve: bate no endpoint de busca e confere 200 (sessão realmente passa o CF)
+	probe := func(ctx context.Context) bool {
+		_, status, err := client.Get(ctx, "https://"+sakura.Host+"/dist/sakura/global/sidebar/sidebar.core.php?q=a")
+		return err == nil && status == 200
+	}
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+
+	// quit: encerra o frontend (vite) e o próprio backend, liberando as portas
+	quit := func() {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			_ = exec.Command("pkill", "-f", "vite dev").Run()
+			_ = exec.Command("pkill", "-f", "bun run dev").Run()
+			stop <- syscall.SIGTERM
+		}()
+	}
+
+	server := httpapi.New(httpapi.Deps{
+		Library:   library,
+		Downloads: downloader,
+		Settings:  settings,
+		Events:    bus,
+		Session:   session,
+		Host:      sakura.Host,
+		Probe:     probe,
+		Quit:      quit,
+		Files:     store,
+	})
+
+	srv := &http.Server{Addr: cfg.Addr, Handler: server.Handler()}
+
+	go func() {
+		log.Printf("meu-manga backend on %s (downloads -> %s)", cfg.Addr, store.Root())
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %v", err)
+		}
+	}()
+
+	<-stop
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(ctx)
+	log.Println("bye")
+}
