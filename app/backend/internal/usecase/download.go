@@ -48,10 +48,11 @@ type Downloader struct {
 	store PageSaver
 	bus   *EventBus
 
-	gate  *domain.RateGate     // nil = sem gate de rate-limit
-	repo  JobRepo              // nil = histórico só em memória
-	now   func() time.Time     // injetável para testes
-	delay func() time.Duration // espera entre capítulos (throttle)
+	gate      *domain.RateGate     // nil = sem gate de rate-limit
+	repo      JobRepo              // nil = histórico só em memória
+	now       func() time.Time     // injetável para testes
+	delay     func() time.Duration // espera entre capítulos (throttle)
+	retention time.Duration        // poda jobs finalizados mais velhos (0 = nunca)
 
 	mu      sync.Mutex
 	jobs    map[string]*domain.Job
@@ -72,6 +73,12 @@ func WithRepo(r JobRepo) Option { return func(d *Downloader) { d.repo = r } }
 
 // WithClock injeta um relógio (testes).
 func WithClock(fn func() time.Time) Option { return func(d *Downloader) { d.now = fn } }
+
+// WithRetention poda automaticamente, no boot, jobs finalizados mais velhos que
+// `d`. Zero desativa a poda (mantém o histórico para sempre).
+func WithRetention(d time.Duration) Option {
+	return func(dl *Downloader) { dl.retention = d }
+}
 
 // WithChapterDelay adiciona uma espera (com jitter) entre capítulos, para ir
 // mais devagar e reduzir o risco de disparar o rate-limit do site.
@@ -116,16 +123,55 @@ func (d *Downloader) loadHistory() {
 	if err != nil {
 		return
 	}
+	var cutoff time.Time
+	if d.retention > 0 {
+		cutoff = d.now().Add(-d.retention)
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for i := range jobs {
 		j := jobs[i]
 		normalizeInterrupted(&j)
+		// poda jobs antigos: some do histórico (os arquivos no disco ficam)
+		if !cutoff.IsZero() && !j.CreatedAt.IsZero() && j.CreatedAt.Before(cutoff) {
+			if d.repo != nil {
+				_ = d.repo.DeleteJob(j.ID)
+			}
+			if n := seqOf(j.ID); n > d.seq {
+				d.seq = n // ainda avança o seq para não reusar ids
+			}
+			continue
+		}
 		d.jobs[j.ID] = &j
 		if n := seqOf(j.ID); n > d.seq {
 			d.seq = n
 		}
 	}
+}
+
+// ClearHistory remove do histórico todos os jobs já finalizados
+// (concluídos/falhos/cancelados), preservando os que estão rodando ou na fila.
+// Os arquivos já baixados no disco não são tocados. Devolve quantos removeu.
+func (d *Downloader) ClearHistory() int {
+	d.mu.Lock()
+	var ids []string
+	for id, j := range d.jobs {
+		if j.Status == domain.StatusRunning || j.Status == domain.StatusQueued {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		delete(d.jobs, id)
+		delete(d.cancels, id)
+	}
+	d.mu.Unlock()
+	if d.repo != nil {
+		for _, id := range ids {
+			_ = d.repo.DeleteJob(id)
+		}
+	}
+	return len(ids)
 }
 
 // normalizeInterrupted rebaixa estados "vivos" que não sobrevivem ao restart.

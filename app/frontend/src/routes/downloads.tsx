@@ -115,6 +115,24 @@ function DownloadsPage() {
   const activeCount = list.filter(
     (j) => j.status === 'running' || j.status === 'queued',
   ).length
+  const finishedCount = list.length - activeCount
+
+  // Limpa de uma vez tudo que já finalizou. Os arquivos no disco não são tocados.
+  async function clearHistory() {
+    const ok = window.confirm(
+      'Limpar o histórico de downloads finalizados?\n\n' +
+        'Isto remove as entradas concluídas, falhas e canceladas da lista. Os ' +
+        'downloads em andamento são mantidos e os arquivos já baixados NÃO são ' +
+        'apagados.',
+    )
+    if (!ok) return
+    try {
+      await api.clearHistory()
+    } catch {
+      // a lista é atualizada a seguir de qualquer forma
+    }
+    setListTick((t) => t + 1)
+  }
 
   const filteredList = list.filter((job) => {
     if (filter === 'active')
@@ -154,6 +172,8 @@ function DownloadsPage() {
             activeCount={activeCount}
             filter={filter}
             onFilterChange={setFilter}
+            canClear={finishedCount > 0}
+            onClear={() => void clearHistory()}
           />
 
           {/* Aviso: downloads incompletos que dá para refazer sem perder nada */}
@@ -254,14 +274,18 @@ function DashboardHeader({
   activeCount,
   filter,
   onFilterChange,
+  canClear,
+  onClear,
 }: {
   total: number
   activeCount: number
   filter: FilterMode
   onFilterChange: (f: FilterMode) => void
+  canClear: boolean
+  onClear: () => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-2">
         <span className="font-mono text-xs uppercase tracking-[0.3em] text-neutral-600">
           downloads
@@ -274,21 +298,33 @@ function DashboardHeader({
           </span>
         )}
       </div>
-      <div className="flex items-center gap-0.5 rounded-lg border border-neutral-800 bg-neutral-900/60 p-0.5">
-        {(['all', 'active', 'done'] as FilterMode[]).map((mode) => (
+      <div className="flex items-center gap-2">
+        {canClear && (
           <button
-            key={mode}
             type="button"
-            onClick={() => onFilterChange(mode)}
-            className={`rounded px-2.5 py-1 font-mono text-xs transition-colors ${
-              filter === mode
-                ? 'bg-neutral-800 text-neutral-100'
-                : 'text-neutral-500 hover:text-neutral-300'
-            }`}
+            onClick={onClear}
+            className="flex items-center gap-1 rounded-lg border border-neutral-800 px-2.5 py-1 font-mono text-xs text-neutral-500 transition-colors hover:border-neutral-700 hover:text-neutral-300"
           >
-            {FILTER_LABELS[mode]}
+            <Trash2 size={11} aria-hidden="true" />
+            Limpar histórico
           </button>
-        ))}
+        )}
+        <div className="flex items-center gap-0.5 rounded-lg border border-neutral-800 bg-neutral-900/60 p-0.5">
+          {(['all', 'active', 'done'] as FilterMode[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => onFilterChange(mode)}
+              className={`rounded px-2.5 py-1 font-mono text-xs transition-colors ${
+                filter === mode
+                  ? 'bg-neutral-800 text-neutral-100'
+                  : 'text-neutral-500 hover:text-neutral-300'
+              }`}
+            >
+              {FILTER_LABELS[mode]}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )

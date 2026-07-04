@@ -86,6 +86,7 @@ backend re-reads it. See [sites/sakura.md](sites/sakura.md) for the full map.
 | GET | `/api/manga/{source}/{slug}/chapters` | `{manga, chapters:[{id, number, title, url, date}]}` |
 | POST | `/api/downloads` | body `{source, slug, title, chapters[]}` → `{jobId}` |
 | GET | `/api/downloads` | job summaries |
+| DELETE | `/api/downloads` | clear all finished jobs from history → `{removed}` |
 | GET | `/api/downloads/{jobId}` | job detail (per-chapter status) |
 | DELETE | `/api/downloads/{jobId}` | cancel a running job |
 | POST | `/api/downloads/{jobId}/retry` | re-enqueue only the not-completed chapters → `{jobId}` |
@@ -108,7 +109,9 @@ Two concerns survive a restart, both in a local SQLite DB
   state change. On boot the `Downloader` reloads it; jobs left "running" are
   downgraded to failed so the UI can offer **redo the missing chapters** (`Retry`
   rebuilds a request from the not-completed tasks only). Removing a job deletes
-  the history row; the downloaded JPEGs on disk are untouched.
+  the history row; the downloaded JPEGs on disk are untouched. Finished jobs can
+  be wiped in bulk (`ClearHistory`), and jobs older than
+  `MM_HISTORY_RETENTION_DAYS` (default 30, 0 = keep forever) are pruned on boot.
 - **Block window** — a shared `domain.RateGate` holds the site's temporary block
   (see [sites/sakura.md](sites/sakura.md)). It's tripped by a `BlockedError`
   surfaced from `browser.Goto`, persisted, and consulted by `Library.Chapters`,

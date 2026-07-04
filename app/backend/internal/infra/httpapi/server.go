@@ -64,6 +64,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/manga/{source}/{slug}/chapters", s.chapters)
 	s.mux.HandleFunc("POST /api/downloads", s.enqueue)
 	s.mux.HandleFunc("GET /api/downloads", s.listJobs)
+	s.mux.HandleFunc("DELETE /api/downloads", s.clearHistory)
 	s.mux.HandleFunc("GET /api/downloads/{id}", s.getJob)
 	s.mux.HandleFunc("DELETE /api/downloads/{id}", s.cancelJob)
 	s.mux.HandleFunc("POST /api/downloads/{id}/retry", s.retryJob)
@@ -309,6 +310,12 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// clearHistory remove de uma vez todos os jobs já finalizados do histórico.
+func (s *Server) clearHistory(w http.ResponseWriter, r *http.Request) {
+	removed := s.deps.Downloads.ClearHistory()
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
 }
 
 // retryJob re-enfileira apenas os capítulos que faltaram de um job.

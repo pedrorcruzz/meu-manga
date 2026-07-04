@@ -230,6 +230,9 @@ export const api = {
     req<void>(`/downloads/${encodeURIComponent(id)}/remove`, {
       method: 'POST',
     }),
+  /** Limpa do histórico todos os jobs finalizados de uma vez. */
+  clearHistory: () =>
+    req<{ removed: number }>('/downloads', { method: 'DELETE' }),
   getSettings: () => req<Settings>('/settings'),
   updateSettings: (body: Partial<Settings>) =>
     req<Settings>('/settings', {

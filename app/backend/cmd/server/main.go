@@ -81,7 +81,8 @@ func main() {
 	downloader := usecase.NewDownloader(reg, store, bus,
 		usecase.WithRepo(history),
 		usecase.WithGate(gate),
-		usecase.WithChapterDelay(cfg.ChapterDelay))
+		usecase.WithChapterDelay(cfg.ChapterDelay),
+		usecase.WithRetention(cfg.HistoryRetention))
 	settings := usecase.NewSettings(store, dialog.New())
 	previewer := usecase.NewPreviewer(reg, imageconv.Thumbnail)
 	previewer.SetGate(gate)
