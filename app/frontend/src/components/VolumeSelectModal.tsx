@@ -368,25 +368,25 @@ export function VolumeSelectModal({
         <div className="retro-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {/* Painel dos capítulos sem volume */}
           {remainingLeftovers.length > 0 && (
-            <div className="rounded-xl border border-amber-700/40 bg-amber-950/20 p-3.5">
+            <div className="rounded-xl border border-neutral-700/60 bg-neutral-800/30 p-3.5">
               <div className="flex flex-wrap items-center gap-2">
                 <AlertTriangle
                   size={14}
-                  className="text-amber-400"
+                  className="text-neutral-400"
                   aria-hidden="true"
                 />
-                <span className="text-sm font-medium text-amber-200">
+                <span className="text-sm font-medium text-neutral-200">
                   {remainingLeftovers.length} capítulo
                   {remainingLeftovers.length !== 1 ? 's' : ''} sem volume
                   detectado
                 </span>
-                <span className="text-xs text-amber-200/60">
+                <span className="text-xs text-neutral-500">
                   - a fonte não agrupou; monte manualmente aqui
                 </span>
                 <button
                   type="button"
                   onClick={() => setShowLeftover((s) => !s)}
-                  className="ml-auto text-xs text-amber-300/80 transition-colors hover:text-amber-200"
+                  className="ml-auto text-xs text-neutral-400 transition-colors hover:text-neutral-200"
                 >
                   {showLeftover ? 'Ocultar' : 'Mostrar'}
                 </button>
@@ -419,7 +419,7 @@ export function VolumeSelectModal({
                   </div>
 
                   {/* Checklist dos capítulos */}
-                  <div className="retro-scroll max-h-40 overflow-y-auto rounded-lg border border-amber-800/30 bg-neutral-900/50">
+                  <div className="retro-scroll max-h-40 overflow-y-auto rounded-lg border border-neutral-700/50 bg-neutral-900/50">
                     <div className="flex flex-wrap gap-1.5 p-2">
                       {remainingLeftovers.map((c) => {
                         const checked = leftoverSel.has(c.id)
@@ -431,7 +431,7 @@ export function VolumeSelectModal({
                             aria-pressed={checked}
                             className={`rounded-md border px-2 py-1 font-mono text-[11px] transition-colors ${
                               checked
-                                ? 'border-amber-500/60 bg-amber-500/20 text-amber-100'
+                                ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-200'
                                 : 'border-neutral-700 bg-neutral-800/60 text-neutral-500 hover:text-neutral-300'
                             }`}
                           >
@@ -444,9 +444,9 @@ export function VolumeSelectModal({
 
                   {/* Padrão detectado na fonte */}
                   {detected && (
-                    <p className="text-xs text-amber-200/70">
+                    <p className="text-xs text-neutral-400">
                       Os volumes da fonte têm cerca de{' '}
-                      <strong className="text-amber-100">
+                      <strong className="text-neutral-200">
                         {detected.mode} capítulos
                       </strong>{' '}
                       cada
@@ -477,7 +477,7 @@ export function VolumeSelectModal({
                       <button
                         type="button"
                         onClick={() => setPerVol(String(detected.mode))}
-                        className="rounded-md border border-amber-700/40 px-2 py-1 text-[11px] text-amber-300/80 transition-colors hover:text-amber-200"
+                        className="rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:text-neutral-200"
                       >
                         usar {detected.mode}
                       </button>
@@ -486,7 +486,7 @@ export function VolumeSelectModal({
                       type="button"
                       onClick={addLeftoverVolumes}
                       disabled={leftoverSelCount === 0}
-                      className="flex items-center gap-1.5 rounded-lg bg-amber-500/90 px-3 py-1.5 text-sm font-medium text-amber-950 transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Plus size={14} aria-hidden="true" />
                       Adicionar em volumes
@@ -569,7 +569,7 @@ export function VolumeSelectModal({
                       {/* Lombada decorativa */}
                       <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
                       {isExtra && (
-                        <span className="absolute left-2 top-2 rounded bg-amber-500/90 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-950">
+                        <span className="absolute left-2 top-2 rounded bg-indigo-500/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
                           novo
                         </span>
                       )}

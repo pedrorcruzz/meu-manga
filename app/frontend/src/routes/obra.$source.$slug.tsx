@@ -312,7 +312,6 @@ function ObraPage() {
               <BookOpen size={13} aria-hidden="true" />
               {sortedChapters.length} capítulos
             </span>
-            <span className="font-mono text-xs text-neutral-600">{source}</span>
             {titleOverride !== null && titleOverride !== data.manga.title && (
               <button
                 type="button"
