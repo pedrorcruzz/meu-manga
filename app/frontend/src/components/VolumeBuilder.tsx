@@ -510,7 +510,7 @@ export function VolumeBuilder({
       {/* ── Montar volume ───────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-neutral-700/40 bg-neutral-900/50 p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <Layers size={15} className="text-indigo-400" aria-hidden="true" />
+          <Layers size={15} className="text-violet-400/80" aria-hidden="true" />
           <span className="font-mono text-xs font-semibold uppercase tracking-wider text-neutral-300">
             Montar volume
           </span>
@@ -525,7 +525,7 @@ export function VolumeBuilder({
               type="button"
               onClick={openSmartPopup}
               disabled={chapters.length === 0}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg border border-indigo-700/50 bg-indigo-900/40 px-4 py-2.5 text-sm font-medium text-indigo-300 transition-colors hover:border-indigo-600/70 hover:bg-indigo-900/60 disabled:opacity-50${sakuraSuccess ? ' vol-success' : ''}`}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-lg border border-violet-800/40 bg-violet-950/30 px-4 py-2.5 text-sm font-medium text-violet-300 transition-colors hover:border-violet-700/50 hover:bg-violet-900/40 disabled:opacity-50${sakuraSuccess ? ' vol-success' : ''}`}
             >
               <Zap size={15} className="text-yellow-400" aria-hidden="true" />
               Volume Inteligente
@@ -595,7 +595,7 @@ export function VolumeBuilder({
               <div className="flex items-center gap-2.5">
                 <Layers
                   size={18}
-                  className="text-indigo-400"
+                  className="text-violet-400/80"
                   aria-hidden="true"
                 />
                 <div>

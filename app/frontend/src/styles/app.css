@@ -38,10 +38,10 @@
 /* Flash de sucesso para geração de volumes */
 @keyframes vol-success {
   0% {
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.7), 0 0 14px rgba(99, 102, 241, 0.35);
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.7), 0 0 14px rgba(139, 92, 246, 0.35);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0), 0 0 0 rgba(99, 102, 241, 0);
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0), 0 0 0 rgba(139, 92, 246, 0);
   }
 }
 

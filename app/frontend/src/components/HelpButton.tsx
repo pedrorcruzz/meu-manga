@@ -45,7 +45,7 @@ export function HelpButton({
         aria-expanded={open}
         className={`flex h-6 w-6 items-center justify-center rounded-full border transition-colors ${
           open
-            ? 'border-indigo-500/60 bg-indigo-500/20 text-indigo-200'
+            ? 'border-violet-500/40 bg-violet-500/10 text-violet-300'
             : 'border-neutral-700 bg-neutral-800/60 text-neutral-500 hover:border-neutral-600 hover:text-neutral-300'
         }`}
       >

@@ -281,7 +281,7 @@ export function VolumeSelectModal({
         {/* Cabeçalho */}
         <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
           <div className="flex items-center gap-2.5">
-            <Layers size={18} className="text-indigo-400" aria-hidden="true" />
+            <Layers size={18} className="text-violet-400/80" aria-hidden="true" />
             <div>
               <h2 className="font-semibold text-neutral-100">{title}</h2>
               <p className="text-xs text-neutral-500">
@@ -431,7 +431,7 @@ export function VolumeSelectModal({
                             aria-pressed={checked}
                             className={`rounded-md border px-2 py-1 font-mono text-[11px] transition-colors ${
                               checked
-                                ? 'border-indigo-500/50 bg-indigo-500/15 text-indigo-200'
+                                ? 'border-violet-500/40 bg-violet-500/10 text-violet-300'
                                 : 'border-neutral-700 bg-neutral-800/60 text-neutral-500 hover:text-neutral-300'
                             }`}
                           >
@@ -486,7 +486,7 @@ export function VolumeSelectModal({
                       type="button"
                       onClick={addLeftoverVolumes}
                       disabled={leftoverSelCount === 0}
-                      className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Plus size={14} aria-hidden="true" />
                       Adicionar em volumes
@@ -522,7 +522,7 @@ export function VolumeSelectModal({
                     title={chaptersTooltip(vol)}
                     className={`group relative flex flex-col overflow-hidden rounded-xl border text-left transition-all ${
                       checked
-                        ? 'border-indigo-500/70 bg-indigo-950/30 ring-1 ring-indigo-500/40'
+                        ? 'border-neutral-200/80 bg-neutral-800/40 ring-1 ring-neutral-200/20'
                         : 'border-neutral-800 bg-neutral-900/60 opacity-60 hover:opacity-100'
                     }`}
                   >
@@ -530,7 +530,7 @@ export function VolumeSelectModal({
                     <span
                       className={`absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
                         checked
-                          ? 'border-indigo-400 bg-indigo-500 text-white'
+                          ? 'border-neutral-200 bg-neutral-100 text-neutral-900'
                           : 'border-neutral-600 bg-neutral-900/80 text-transparent'
                       }`}
                     >
@@ -569,7 +569,7 @@ export function VolumeSelectModal({
                       {/* Lombada decorativa */}
                       <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
                       {isExtra && (
-                        <span className="absolute left-2 top-2 rounded bg-indigo-500/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                        <span className="absolute left-2 top-2 rounded bg-violet-600/70 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
                           novo
                         </span>
                       )}
@@ -606,7 +606,7 @@ export function VolumeSelectModal({
             type="button"
             onClick={confirm}
             disabled={selected.size === 0}
-            className="flex items-center gap-2 rounded-xl bg-indigo-500 px-5 py-2 font-semibold text-white transition-colors hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2 font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Layers size={15} aria-hidden="true" />
             Montar {selected.size} {selected.size === 1 ? 'volume' : 'volumes'}

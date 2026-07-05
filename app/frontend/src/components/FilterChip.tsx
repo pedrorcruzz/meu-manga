@@ -23,7 +23,7 @@ export function FilterChip({
       aria-pressed={active}
       className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
         active
-          ? 'border-indigo-500/60 bg-indigo-500/20 text-indigo-200'
+          ? 'border-violet-500/40 bg-violet-500/10 text-violet-300'
           : 'border-neutral-700/70 bg-neutral-800/40 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300'
       }`}
     >
@@ -31,7 +31,7 @@ export function FilterChip({
       {count !== undefined && (
         <span
           className={`rounded-full px-1 tabular-nums ${
-            active ? 'bg-indigo-500/30 text-indigo-100' : 'bg-neutral-700/60'
+            active ? 'bg-violet-500/20 text-violet-200' : 'bg-neutral-700/60'
           }`}
         >
           {count}
