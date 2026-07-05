@@ -13,7 +13,7 @@ export function CloudflareBanner() {
       <div className="border-b border-emerald-800 bg-emerald-950 px-4 py-2.5">
         <div className="mx-auto flex max-w-5xl items-center gap-2 text-sm text-emerald-300">
           <Check size={14} aria-hidden="true" />
-          <span>Sessão ok — tudo certo para baixar!</span>
+          <span>Sessão ok - tudo certo para baixar!</span>
         </div>
       </div>
     )
@@ -27,7 +27,7 @@ export function CloudflareBanner() {
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3">
         <p className="flex-1 text-sm text-amber-200">
           <span className="font-semibold">Verificação Cloudflare pendente</span>{' '}
-          — resolva o desafio no Navegador (firewall do site, não o captcha do
+          - resolva o desafio no Navegador (firewall do site, não o captcha do
           leitor). O download volta sozinho.
         </p>
         <div className="flex shrink-0 gap-2">

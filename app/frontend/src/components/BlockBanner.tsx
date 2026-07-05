@@ -29,25 +29,25 @@ export function BlockBanner() {
         />
         <div className="flex-1 space-y-1">
           <p className="text-sm font-semibold text-rose-200">
-            Bloqueio temporário do site — não é o Cloudflare
+            Bloqueio temporário do site - não é o Cloudflare
           </p>
           <p className="text-sm text-rose-200/80">
             O Sakura detectou muitos acessos vindos da sua rede e{' '}
             <span className="font-semibold">bloqueou por tempo</span>. Isto não é
-            um desafio para resolver: não adianta tentar de novo agora — só faria
+            um desafio para resolver: não adianta tentar de novo agora - só faria
             o bloqueio durar mais.
           </p>
           <p className="flex items-center gap-1.5 pt-0.5 text-sm text-rose-100">
             <Clock size={13} aria-hidden="true" />
             Acesso liberado às{' '}
-            <span className="font-mono font-semibold">{when || '—'}</span>
+            <span className="font-mono font-semibold">{when || '-'}</span>
             {until && block.rawTime && until !== block.rawTime && (
               <span className="text-rose-300/70">({until} no seu horário)</span>
             )}
           </p>
           <p className="pt-0.5 text-xs text-rose-300/60">
             Dica: baixe menos capítulos de uma vez e mais espaçado para evitar
-            que isto se repita. Seus downloads já concluídos estão salvos — nada
+            que isto se repita. Seus downloads já concluídos estão salvos - nada
             foi perdido.
           </p>
         </div>

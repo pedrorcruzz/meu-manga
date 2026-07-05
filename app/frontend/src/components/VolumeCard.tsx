@@ -1,4 +1,4 @@
-// Card de volume individual — nome editável, capa, capítulos como chips, pull-next.
+// Card de volume individual - nome editável, capa, capítulos como chips, pull-next.
 
 import { useRef, useState, type ChangeEvent } from 'react'
 import { ArrowRight, ImagePlus, Loader2, Trash2, X } from 'lucide-react'
@@ -18,7 +18,7 @@ export interface Volume {
   name: string
   /**
    * Rótulo original da fonte, ex.: "Volume 15".
-   * Apenas informativo — não é enviado ao backend.
+   * Apenas informativo - não é enviado ao backend.
    */
   label?: string
   /** Capítulos na ordem de atribuição. */
@@ -31,13 +31,13 @@ export interface Volume {
 }
 
 function chapterRange(chapters: Chapter[]): string {
-  if (chapters.length === 0) return '—'
+  if (chapters.length === 0) return '-'
   const sorted = [...chapters].sort(
     (a, b) => parseFloat(a.number) - parseFloat(b.number),
   )
   const first = sorted[0].number
   const last = sorted[sorted.length - 1].number
-  return first === last ? `Cap. ${first}` : `Cap. ${first}–${last}`
+  return first === last ? `Cap. ${first}` : `Cap. ${first}-${last}`
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -212,7 +212,7 @@ export function VolumeCard({
                   {c.title && c.title !== c.number && (
                     <span className="max-w-[7rem] truncate text-neutral-500">
                       {' '}
-                      — {c.title}
+                      - {c.title}
                     </span>
                   )}
                   <button
@@ -268,7 +268,7 @@ export function VolumeCard({
       {preview && count > 0 && (
         <div className="border-t border-neutral-800/60 px-4 py-3 space-y-2">
           <p className="text-[10px] leading-snug text-neutral-600">
-            Primeiras páginas do 1º capítulo — confira se a capa já veio na imagem.
+            Primeiras páginas do 1º capítulo - confira se a capa já veio na imagem.
           </p>
           {preview.status === 'loading' && (
             <div className="flex items-center gap-1.5 text-neutral-600">

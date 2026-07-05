@@ -20,9 +20,9 @@ function SearchPage() {
   const [isSessionError, setIsSessionError] = useState(false)
   const [open, setOpen] = useState(false)
 
-  // cache por termo (normalizado) — evita re-buscar o que já foi digitado
+  // cache por termo (normalizado) - evita re-buscar o que já foi digitado
   const cache = useRef(new Map<string, SearchResult[]>())
-  // id da última requisição — descarta respostas obsoletas
+  // id da última requisição - descarta respostas obsoletas
   const reqId = useRef(0)
 
   const runSearch = useCallback(
@@ -131,7 +131,7 @@ function SearchPage() {
                 }`}
               >
                 {isSessionError
-                  ? 'Sessão Cloudflare inválida — resolva o desafio (veja o aviso acima).'
+                  ? 'Sessão Cloudflare inválida - resolva o desafio (veja o aviso acima).'
                   : error}
               </p>
             ) : results.length === 0 && !loading ? (

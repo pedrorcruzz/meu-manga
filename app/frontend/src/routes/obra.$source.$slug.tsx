@@ -108,7 +108,7 @@ function ObraPage() {
     filteredChapters.length > 0 &&
     filteredChapters.every((c) => selected.has(c.id))
 
-  // Último capítulo alternado — âncora para seleção em intervalo (shift+clique).
+  // Último capítulo alternado - âncora para seleção em intervalo (shift+clique).
   const lastToggledRef = useRef<string | null>(null)
 
   function toggleChapter(id: string, shiftKey = false) {
@@ -220,7 +220,7 @@ function ObraPage() {
     if (isSessionError) {
       return (
         <div className="rounded-xl bg-amber-950/50 px-5 py-4 text-sm text-amber-300">
-          Sessão Cloudflare inválida — resolva o desafio no Navegador (veja o aviso
+          Sessão Cloudflare inválida - resolva o desafio no Navegador (veja o aviso
           acima).{' '}
           <button onClick={reload} className="underline hover:text-amber-200">
             Tentar de novo
@@ -236,7 +236,7 @@ function ObraPage() {
           </p>
           <p className="text-rose-200/80">{error}</p>
           <p className="text-xs text-rose-300/60">
-            Espere o horário indicado — tentar agora só prolonga o bloqueio.
+            Espere o horário indicado - tentar agora só prolonga o bloqueio.
           </p>
         </div>
       )
@@ -281,13 +281,14 @@ function ObraPage() {
               htmlFor="obra-title"
               className="font-mono text-[11px] font-semibold uppercase tracking-wider text-neutral-500"
             >
-              Nome da pasta no disco (editável)
+              Nome do Manga
             </label>
-            <HelpButton label="Para que serve este nome?">
-              É o nome da pasta onde os capítulos serão salvos no seu
-              computador. Editar aqui muda <strong>só</strong> o nome da pasta
-              de destino — não altera o site de origem nem o conteúdo baixado.
-              Ajuste como preferir organizar sua biblioteca.
+            <HelpButton label="O que é o nome do mangá?">
+              É o nome do mangá e também da pasta onde os capítulos ficam
+              salvos no seu computador. Mudar aqui troca só o nome dessa pasta
+              de destino. Não altera o site de origem nem o conteúdo baixado.
+              No disco fica assim: Nome do Manga {'>'} Nome do Manga V001{' '}
+              {'>'} Cap 1.
             </HelpButton>
           </div>
           {/* Campo do título com moldura clara de edição */}
@@ -335,7 +336,7 @@ function ObraPage() {
           }`}
         >
           {submitSessionError
-            ? 'Sessão Cloudflare inválida — resolva o desafio no Navegador (veja o aviso acima).'
+            ? 'Sessão Cloudflare inválida - resolva o desafio no Navegador (veja o aviso acima).'
             : submitError}
         </div>
       )}

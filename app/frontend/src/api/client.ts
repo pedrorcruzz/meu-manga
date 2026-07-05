@@ -1,13 +1,13 @@
-// Cliente da API do backend Go. Aponta direto pro backend (:8080) — funciona
+// Cliente da API do backend Go. Aponta direto pro backend (:8080) - funciona
 // em dev e em produção (o backend libera CORS), sem depender de proxy.
 export const API_BASE =
   (typeof process !== 'undefined' && process.env?.MM_BACKEND) ||
   'http://localhost:8080'
 
-// Lançado quando o backend retorna 424 — sessão Cloudflare inválida.
+// Lançado quando o backend retorna 424 - sessão Cloudflare inválida.
 export class NoSessionError extends Error {
   constructor() {
-    super('Sessão Cloudflare inválida — resolva o desafio no Navegador')
+    super('Sessão Cloudflare inválida - resolva o desafio no Navegador')
     this.name = 'NoSessionError'
   }
 }
@@ -117,7 +117,7 @@ export interface JobDetail extends JobSummary {
   tasks: ChapterTask[]
 }
 
-/** Capítulo no payload de download — subconjunto de Chapter sem date. */
+/** Capítulo no payload de download - subconjunto de Chapter sem date. */
 export interface ChapterInput {
   id: string
   number: string
@@ -248,7 +248,7 @@ export const api = {
     ),
   /**
    * Retorna a URL direta da imagem de uma página (para usar em <img src>).
-   * Não faz fetch — apenas monta a URL.
+   * Não faz fetch - apenas monta a URL.
    */
   pageImageUrl: (jobId: string, taskIndex: number, name: string): string =>
     `${API_BASE}/api/downloads/${encodeURIComponent(jobId)}/chapters/${String(taskIndex)}/pages/${encodeURIComponent(name)}`,
@@ -271,7 +271,7 @@ export const api = {
       body: JSON.stringify({ source, chapter, count }),
     }),
   /** Encerra o backend e o servidor de desenvolvimento. Falhas de rede são
-   *  esperadas — o servidor mata a si mesmo no meio da resposta. */
+   *  esperadas - o servidor mata a si mesmo no meio da resposta. */
   quit: async (): Promise<void> => {
     try {
       await fetch(`${API_BASE}/api/quit`, {

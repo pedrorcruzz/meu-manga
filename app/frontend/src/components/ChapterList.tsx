@@ -6,7 +6,7 @@ export type SortOrder = 'asc' | 'desc'
 
 /**
  * Ordena capítulos numericamente (suporta decimais como "10.5").
- * Retorna uma nova array — não muta a original.
+ * Retorna uma nova array - não muta a original.
  */
 export function sortChapters(chapters: Chapter[], order: SortOrder): Chapter[] {
   return [...chapters].sort((a, b) => {
@@ -25,7 +25,7 @@ interface ChapterListProps {
    */
   onToggle: (id: string, shiftKey: boolean) => void
   /**
-   * Quando true, remove borda/arredondamento do <ul> — use quando o contêiner
+   * Quando true, remove borda/arredondamento do <ul> - use quando o contêiner
    * pai já fornece borda e arredondamento (ex.: painel com scroll interno).
    */
   bare?: boolean
@@ -89,7 +89,7 @@ export function ChapterList({
                   Cap. {c.number}
                 </span>
                 {c.title && c.title !== c.number && (
-                  <span className="text-neutral-500"> — {c.title}</span>
+                  <span className="text-neutral-500"> - {c.title}</span>
                 )}
               </span>
               {c.date && (

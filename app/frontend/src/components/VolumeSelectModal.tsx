@@ -17,7 +17,7 @@ import {
 import type { Chapter } from '~/api/client'
 import type { Volume } from './VolumeCard'
 
-/** Faixa de capítulos de um volume, ex.: "Cap. 1 – 14" ou "Cap. 7". */
+/** Faixa de capítulos de um volume, ex.: "Cap. 1 - 14" ou "Cap. 7". */
 function chapterRange(vol: Volume): string {
   if (vol.chapters.length === 0) return 'vazio'
   const sorted = [...vol.chapters].sort(
@@ -25,7 +25,7 @@ function chapterRange(vol: Volume): string {
   )
   const first = sorted[0].number
   const last = sorted[sorted.length - 1].number
-  return first === last ? `Cap. ${first}` : `Cap. ${first} – ${last}`
+  return first === last ? `Cap. ${first}` : `Cap. ${first} - ${last}`
 }
 
 /** Lista completa dos capítulos para o tooltip da capa. */
@@ -34,7 +34,7 @@ function chaptersTooltip(vol: Volume): string {
   const nums = [...vol.chapters]
     .sort((a, b) => parseFloat(a.number) - parseFloat(b.number))
     .map((c) => c.number)
-  return `${vol.name} — Cap. ${nums.join(', ')}`
+  return `${vol.name} - Cap. ${nums.join(', ')}`
 }
 
 /** true se o volume bate com a busca (nome, rótulo ou número de capítulo). */
@@ -43,6 +43,33 @@ function matchesQuery(vol: Volume, q: string): boolean {
   if (vol.name.toLowerCase().includes(q)) return true
   if (vol.label && vol.label.toLowerCase().includes(q)) return true
   return vol.chapters.some((c) => c.number.toLowerCase().includes(q))
+}
+
+/**
+ * Detecta o padrão de capítulos por volume a partir dos volumes já montados
+ * pela fonte: `mode` = quantidade mais comum, `avg` = média arredondada.
+ * Ignora o último volume se ele for parcial (menor que os demais).
+ */
+function typicalPerVol(vols: Volume[]): { mode: number; avg: number } | null {
+  const counts = vols.map((v) => v.chapters.length).filter((n) => n > 0)
+  if (counts.length === 0) return null
+  // Descarta o último se for claramente parcial (volume ainda em andamento).
+  const trimmed =
+    counts.length > 1 && counts[counts.length - 1] < Math.max(...counts)
+      ? counts.slice(0, -1)
+      : counts
+  const freq = new Map<number, number>()
+  for (const n of trimmed) freq.set(n, (freq.get(n) ?? 0) + 1)
+  let mode = trimmed[0]
+  let best = 0
+  for (const [n, f] of freq) {
+    if (f > best) {
+      best = f
+      mode = n
+    }
+  }
+  const avg = Math.round(trimmed.reduce((a, b) => a + b, 0) / trimmed.length)
+  return { mode, avg }
 }
 
 /** Maior número já usado entre os nomes/rótulos dos volumes. */
@@ -107,10 +134,15 @@ export function VolumeSelectModal({
   const [leftoverSel, setLeftoverSel] = useState<Set<string>>(
     () => new Set(leftoverChapters.map((c) => c.id)),
   )
-  const [perVol, setPerVol] = useState('10')
+  // Padrão de capítulos por volume detectado na fonte (para sugerir ao usuário).
+  const detected = useMemo(() => typicalPerVol(volumes), [volumes])
+  const [perVol, setPerVol] = useState(() => {
+    const t = typicalPerVol(volumes)
+    return t ? String(t.mode) : '10'
+  })
   const [showLeftover, setShowLeftover] = useState(leftoverChapters.length > 0)
 
-  // Volumes visíveis após a busca — as ações de marcar operam sobre este subconjunto.
+  // Volumes visíveis após a busca - as ações de marcar operam sobre este subconjunto.
   const visibleVolumes = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return allVolumes
@@ -255,7 +287,7 @@ export function VolumeSelectModal({
               <p className="text-xs text-neutral-500">
                 {allVolumes.length}{' '}
                 {allVolumes.length === 1 ? 'volume' : 'volumes'} ·{' '}
-                {totalChapters} capítulos — escolha quais montar
+                {totalChapters} capítulos - escolha quais montar
               </p>
             </div>
           </div>
@@ -349,7 +381,7 @@ export function VolumeSelectModal({
                   detectado
                 </span>
                 <span className="text-xs text-amber-200/60">
-                  — a fonte não agrupou; monte manualmente aqui
+                  - a fonte não agrupou; monte manualmente aqui
                 </span>
                 <button
                   type="button"
@@ -410,6 +442,21 @@ export function VolumeSelectModal({
                     </div>
                   </div>
 
+                  {/* Padrão detectado na fonte */}
+                  {detected && (
+                    <p className="text-xs text-amber-200/70">
+                      Os volumes da fonte têm cerca de{' '}
+                      <strong className="text-amber-100">
+                        {detected.mode} capítulos
+                      </strong>{' '}
+                      cada
+                      {detected.avg !== detected.mode
+                        ? ` (média ${detected.avg})`
+                        : ''}
+                      . Sugerimos usar esse mesmo número aqui.
+                    </p>
+                  )}
+
                   {/* Montar em volumes */}
                   <div className="flex flex-wrap items-center gap-2">
                     <label
@@ -426,6 +473,15 @@ export function VolumeSelectModal({
                       onChange={(e) => setPerVol(e.target.value)}
                       className="w-16 rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-center text-sm focus:border-neutral-500 focus:outline-none"
                     />
+                    {detected && perVol !== String(detected.mode) && (
+                      <button
+                        type="button"
+                        onClick={() => setPerVol(String(detected.mode))}
+                        className="rounded-md border border-amber-700/40 px-2 py-1 text-[11px] text-amber-300/80 transition-colors hover:text-amber-200"
+                      >
+                        usar {detected.mode}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={addLeftoverVolumes}

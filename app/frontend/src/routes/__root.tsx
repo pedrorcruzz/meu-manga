@@ -49,7 +49,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <CloudflareBanner />
           <header className="border-b border-neutral-800/60 bg-neutral-950/80 backdrop-blur-sm">
             <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-2">
-              {/* Wordmark com ícone — clica para voltar à home */}
+              {/* Wordmark com ícone - clica para voltar à home */}
               <Link
                 to="/"
                 className="flex items-center gap-2 font-mono text-sm font-bold uppercase tracking-[0.2em] text-neutral-300 transition hover:text-white"
@@ -64,7 +64,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                 />
                 MEU MANGÁ
               </Link>
-              {/* Controles — pills alinhados */}
+              {/* Controles - pills alinhados */}
               <div className="flex items-center gap-2">
                 <Link
                   to="/downloads"
@@ -97,7 +97,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               rel="noreferrer"
               className="flex items-center gap-1 transition-colors hover:text-neutral-400"
             >
-              {/* GitHub mark SVG — lucide-react nesta versão não inclui Github */}
+              {/* GitHub mark SVG - lucide-react nesta versão não inclui Github */}
               <svg
                 width="11"
                 height="11"

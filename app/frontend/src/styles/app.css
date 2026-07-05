@@ -121,7 +121,7 @@
     border-color: var(--color-gray-200, currentcolor);
   }
 
-  /* Tailwind v4 não define cursor padrão em <button> — corrigir globalmente */
+  /* Tailwind v4 não define cursor padrão em <button> - corrigir globalmente */
   button:not(:disabled),
   [role='button']:not([aria-disabled='true']) {
     cursor: pointer;

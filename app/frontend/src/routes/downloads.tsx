@@ -94,7 +94,7 @@ function DownloadsPage() {
   async function remove(id: string) {
     const ok = window.confirm(
       'Remover este download do histórico?\n\n' +
-        'Os capítulos já baixados no disco NÃO são apagados — isto só limpa a ' +
+        'Os capítulos já baixados no disco NÃO são apagados - isto só limpa a ' +
         'entrada aqui da lista.',
     )
     if (!ok) return
@@ -164,7 +164,7 @@ function DownloadsPage() {
       {error ? (
         isSessionError ? (
           <div className="rounded-xl border border-amber-800/40 bg-amber-950/30 px-4 py-3 font-mono text-sm text-amber-300">
-            Sessão Cloudflare inválida — resolva o desafio no Navegador (veja o
+            Sessão Cloudflare inválida - resolva o desafio no Navegador (veja o
             aviso acima).
           </div>
         ) : (
@@ -264,7 +264,7 @@ function IncompleteNotice({ count }: { count: number }) {
           Alguns capítulos não terminaram (bloqueio do site, sessão ou rede). O
           que já baixou está salvo no disco. Use{' '}
           <span className="font-semibold">Refazer o que faltou</span> no card
-          para baixar só os capítulos restantes — sem repetir os concluídos.
+          para baixar só os capítulos restantes - sem repetir os concluídos.
         </p>
       </div>
     </div>
@@ -432,7 +432,7 @@ function CaptchaJobAlert({
         />
         <div className="space-y-1">
           <p className="font-mono text-xs font-semibold uppercase tracking-wide text-amber-300">
-            Captcha do leitor — {title}
+            Captcha do leitor - {title}
           </p>
           <p className="text-xs leading-relaxed text-amber-200/70">
             O leitor de mangá tem seu próprio anti-bot. Abra o capítulo no
@@ -454,7 +454,7 @@ function CaptchaJobAlert({
             {task.chapter.title &&
               task.chapter.title !== task.chapter.number && (
                 <span className="text-amber-400/60">
-                  {' '}— {task.chapter.title}
+                  {' '}- {task.chapter.title}
                 </span>
               )}
             <span className="ml-1 text-amber-500/50">(abrir e resolver)</span>
@@ -592,7 +592,7 @@ function JobCard({
     <div
       className={`rounded-xl border bg-neutral-900/60 transition-shadow ${cardBorderClass} ${cardGlowClass}`}
     >
-      {/* Cabeçalho — sempre visível, clicável para expandir */}
+      {/* Cabeçalho - sempre visível, clicável para expandir */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -660,7 +660,7 @@ function JobCard({
           </p>
         </div>
 
-        {/* Ações — stop propagation para não colapsar ao clicar */}
+        {/* Ações - stop propagation para não colapsar ao clicar */}
         <div
           className="flex shrink-0 items-center gap-1.5"
           onClick={(e) => e.stopPropagation()}
@@ -706,7 +706,7 @@ function JobCard({
         </div>
       </button>
 
-      {/* Barra de progresso geral (mobile — abaixo do cabeçalho) */}
+      {/* Barra de progresso geral (mobile - abaixo do cabeçalho) */}
       <div className="px-4 pb-3 sm:hidden">
         <div
           className="h-1 overflow-hidden rounded-full bg-neutral-800"
@@ -792,7 +792,7 @@ function TaskRow({ task, taskIndex, jobId, liveProgress }: TaskRowProps) {
           {task.chapter.title &&
             task.chapter.title !== task.chapter.number && (
               <span className="text-neutral-600">
-                {' '}— {task.chapter.title}
+                {' '}- {task.chapter.title}
               </span>
             )}
         </span>

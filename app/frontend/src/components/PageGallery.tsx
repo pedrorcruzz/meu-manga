@@ -96,7 +96,7 @@ export function PageGallery({
               Clique numa miniatura para ampliar. Use{' '}
               <Trash2 size={10} className="inline-block" aria-hidden="true" />{' '}
               para remover páginas desnecessárias (ex.: a marca d'água do tradutor
-              na página 001) — as demais são renumeradas automaticamente. Pressione{' '}
+              na página 001) - as demais são renumeradas automaticamente. Pressione{' '}
               <kbd className="rounded bg-neutral-800 px-1 py-0.5 font-mono text-[10px]">Esc</kbd>{' '}
               para fechar.
             </p>

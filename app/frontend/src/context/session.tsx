@@ -1,4 +1,4 @@
-// Contexto de sessão Cloudflare — fonte única de verdade para o badge e o banner.
+// Contexto de sessão Cloudflare - fonte única de verdade para o badge e o banner.
 // Polling a cada 20 s + ao focar a janela.
 
 import {
@@ -99,7 +99,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('focus', doCheck)
   }, [doCheck])
 
-  // Relógio de "última verificação há Xs" — tick a cada segundo
+  // Relógio de "última verificação há Xs" - tick a cada segundo
   useEffect(() => {
     const id = setInterval(
       () => setSecondsSinceCheck((s) => s + 1),

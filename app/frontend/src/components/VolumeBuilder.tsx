@@ -1,4 +1,4 @@
-// Construtor de volumes — automático ("Volume Inteligente") ou manual em dois painéis.
+// Construtor de volumes - automático ("Volume Inteligente") ou manual em dois painéis.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -131,7 +131,7 @@ export function VolumeBuilder({
   // ── Preview state ────────────────────────────────────────────────────────────
   /** Cache de imagens de preview, persistente entre gerações. Chave: `${chapter.id}:3`. */
   const previewCacheRef = useRef<Map<string, string[]>>(new Map())
-  /** Número da epoch de fetch atual — incrementado a cada geração para cancelar fetches obsoletos. */
+  /** Número da epoch de fetch atual - incrementado a cada geração para cancelar fetches obsoletos. */
   const fetchEpochRef = useRef(0)
   const [volumePreviews, setVolumePreviews] = useState<Record<string, PreviewState>>({})
 
@@ -168,7 +168,7 @@ export function VolumeBuilder({
     })
   }, [chapters, leftFilter, volFilter, selFilter, assignedIds])
 
-  // Scroll infinito do pool — revela os capítulos em lotes conforme rola.
+  // Scroll infinito do pool - revela os capítulos em lotes conforme rola.
   const {
     visible: visibleLeft,
     sentinelRef: leftSentinelRef,
@@ -515,7 +515,7 @@ export function VolumeBuilder({
             Montar volume
           </span>
           <span className="text-xs text-neutral-600">
-            — escolha como agrupar os capítulos
+            - escolha como agrupar os capítulos
           </span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -532,7 +532,7 @@ export function VolumeBuilder({
             </button>
             <HelpButton label="O que é o Volume Inteligente?">
               Detecta automaticamente os volumes oficiais da fonte e monta as
-              capas pra você — é só escolher quais baixar. Capítulos recentes
+              capas pra você - é só escolher quais baixar. Capítulos recentes
               que ainda não têm volume aparecem num painel à parte, onde você
               monta eles em volumes escolhendo os capítulos e quantos por
               volume.
@@ -624,7 +624,7 @@ export function VolumeBuilder({
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[2fr_3fr]">
         {/* Painel de capítulos (esquerda) */}
         <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/40">
-          {/* Scroll container — header sticky dentro dele */}
+          {/* Scroll container - header sticky dentro dele */}
           <div className="h-[55vh] overflow-y-auto">
             {/* Sticky header */}
             <div className="sticky top-0 z-10 space-y-2 border-b border-neutral-800 bg-neutral-900 px-3 py-2.5">
@@ -798,7 +798,7 @@ export function VolumeBuilder({
                             Cap. {c.number}
                           </span>
                           {c.title && c.title !== c.number && (
-                            <span className="text-neutral-600"> — {c.title}</span>
+                            <span className="text-neutral-600"> - {c.title}</span>
                           )}
                         </span>
                         {assigned && (
@@ -857,14 +857,14 @@ export function VolumeBuilder({
                   {leftSelected.size - addableCount === 1
                     ? 'atribuído'
                     : 'atribuídos'}{' '}
-                  — será ignorado.
+                  - será ignorado.
                 </p>
               )}
             </div>
           )}
         </div>
 
-        {/* Painel de volumes (direita) — carousel */}
+        {/* Painel de volumes (direita) - carousel */}
         <div className="space-y-3">
           {/* Cabeçalho do painel */}
           <div className="flex items-center justify-between">
@@ -920,7 +920,7 @@ export function VolumeBuilder({
                 </button>
               </div>
 
-              {/* Busca/salto — vai automático ao digitar o número ou nome */}
+              {/* Busca/salto - vai automático ao digitar o número ou nome */}
               <div className="relative">
                 <Search
                   size={12}
