@@ -181,29 +181,6 @@ func (p *Page) CaptureImages(
 	idle time.Duration,
 	onImage func(url string, data []byte) error,
 ) error {
-	return p.captureImages(ctx, chapterURL, urlContains, idle, false, onImage)
-}
-
-// CapturePreview faz uma ÚNICA varredura para frente (sem o passe reverso de
-// correção) com o idle informado. É bem mais rápido que CaptureImages e pode
-// deixar passar alguma página — ideal para o preview, que só precisa de uma
-// amostra aproximada das primeiras/últimas páginas.
-func (p *Page) CapturePreview(
-	ctx context.Context,
-	chapterURL, urlContains string,
-	idle time.Duration,
-	onImage func(url string, data []byte) error,
-) error {
-	return p.captureImages(ctx, chapterURL, urlContains, idle, true, onImage)
-}
-
-func (p *Page) captureImages(
-	ctx context.Context,
-	chapterURL, urlContains string,
-	idle time.Duration,
-	forwardOnly bool,
-	onImage func(url string, data []byte) error,
-) error {
 	// desabilita o cache: garante que o passe pra trás RE-BUSQUE cada página da rede
 	// (páginas que falharam e voltaram HTML no 1º passe são refeitas de verdade).
 	_ = proto.NetworkEnable{}.Call(p.rod)
@@ -307,9 +284,6 @@ func (p *Page) captureImages(
 	}
 	if err := sweep(input.ArrowRight, 1040); err != nil {
 		return err
-	}
-	if forwardOnly {
-		return nil // preview: uma passada basta
 	}
 	return sweep(input.ArrowLeft, 0)
 }

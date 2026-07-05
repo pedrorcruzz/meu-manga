@@ -21,7 +21,6 @@ import (
 	"meumanga/internal/infra/dialog"
 	"meumanga/internal/infra/httpapi"
 	"meumanga/internal/infra/httpclient"
-	"meumanga/internal/infra/imageconv"
 	"meumanga/internal/infra/jobstore"
 	"meumanga/internal/infra/storage"
 	"meumanga/internal/usecase"
@@ -84,8 +83,6 @@ func main() {
 		usecase.WithChapterDelay(cfg.ChapterDelay),
 		usecase.WithRetention(cfg.HistoryRetention))
 	settings := usecase.NewSettings(store, dialog.New())
-	previewer := usecase.NewPreviewer(reg, imageconv.Thumbnail)
-	previewer.SetGate(gate)
 
 	// sonda leve: bate no endpoint de busca e confere 200 (sessão realmente passa o CF)
 	probe := func(ctx context.Context) bool {
@@ -119,7 +116,6 @@ func main() {
 		Downloads: downloader,
 		Settings:  settings,
 		Events:    bus,
-		Previewer: previewer,
 		Session:   session,
 		Host:      sakura.Host,
 		Gate:      gate,

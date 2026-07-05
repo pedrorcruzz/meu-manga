@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -19,6 +19,7 @@ import {
   Loader2,
   RotateCcw,
   RotateCw,
+  Search,
   Trash2,
   Turtle,
   X,
@@ -38,6 +39,7 @@ import { ConfirmDialog } from '~/components/ConfirmDialog'
 import { PageGallery } from '~/components/PageGallery'
 import { useSessionContext } from '~/context/session'
 import { useAsync } from '~/hooks/useAsync'
+import { useIncremental } from '~/hooks/useIncremental'
 import {
   takePendingDownload,
   type PendingDownload,
@@ -382,6 +384,22 @@ function PendingVolumesPanel({
     (s, v) => s + v.chapters.length,
     0,
   )
+
+  // Busca por volume (nome ou número de capítulo).
+  const [query, setQuery] = useState('')
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return pending.volumes
+    return pending.volumes.filter(
+      (v) =>
+        v.name.toLowerCase().includes(q) ||
+        v.chapters.some((c) => c.number.toLowerCase().includes(q)),
+    )
+  }, [pending.volumes, query])
+
+  // Renderiza as capas em lotes (scroll infinito) para aguentar coleções grandes.
+  const { visible, sentinelRef, hasMore } = useIncremental(filtered, 48)
+
   return (
     <div className="space-y-3 rounded-xl border border-violet-800/40 bg-violet-950/20 p-4">
       {/* Cabeçalho */}
@@ -434,10 +452,42 @@ function PendingVolumesPanel({
         o que você não baixar agora fica aqui.
       </p>
 
+      {/* Busca por volume */}
+      <div className="relative">
+        <Search
+          size={14}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"
+          aria-hidden="true"
+        />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar volume ou capítulo… (ex: V003, 3, 42)"
+          className="w-full rounded-lg border border-neutral-800 bg-neutral-900/60 py-2 pl-9 pr-9 text-sm placeholder:text-neutral-600 focus:border-neutral-600 focus:outline-none"
+          aria-label="Buscar volumes para baixar"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery('')}
+            aria-label="Limpar busca"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-neutral-600 transition-colors hover:text-neutral-300"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
       {/* Grade de volumes (rolagem interna para não esticar a página) */}
-      <div className="max-h-[26rem] overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]">
+      <div className="max-h-[38rem] overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]">
+        {filtered.length === 0 ? (
+          <p className="py-10 text-center text-sm text-neutral-600">
+            Nenhum volume encontrado para “{query}”.
+          </p>
+        ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {pending.volumes.map((v) => (
+          {visible.map((v) => (
           <div
             key={v.name}
             className="flex flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/60"
@@ -493,6 +543,15 @@ function PendingVolumesPanel({
           </div>
           ))}
         </div>
+        )}
+        {hasMore && (
+          <div
+            ref={sentinelRef}
+            className="py-3 text-center text-[11px] text-neutral-700"
+          >
+            carregando mais volumes…
+          </div>
+        )}
       </div>
     </div>
   )

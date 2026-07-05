@@ -287,16 +287,6 @@ export const api = {
       `/downloads/${encodeURIComponent(jobId)}/chapters/${String(taskIndex)}/pages/${encodeURIComponent(name)}`,
       { method: 'DELETE' },
     ),
-  /**
-   * Pré-visualiza as páginas de um capítulo como data URLs JPEG.
-   * `images` = primeiras `count` páginas; `tail` = últimas `count` páginas.
-   * Ambas já vêm redimensionadas pelo backend.
-   */
-  previewChapter: (source: string, chapter: Chapter, count = 3) =>
-    req<{ images: string[]; tail: string[] }>('/preview', {
-      method: 'POST',
-      body: JSON.stringify({ source, chapter, count }),
-    }),
   /** Encerra o backend e o servidor de desenvolvimento. Falhas de rede são
    *  esperadas - o servidor mata a si mesmo no meio da resposta. */
   quit: async (): Promise<void> => {

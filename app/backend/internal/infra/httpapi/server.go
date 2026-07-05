@@ -21,7 +21,6 @@ type Deps struct {
 	Downloads *usecase.Downloader
 	Settings  *usecase.Settings
 	Events    *usecase.EventBus
-	Previewer *usecase.Previewer
 	Session   domain.SessionProvider
 	Host      string
 	// Gate expõe o bloqueio temporário do site (rate-limit) para o /health.
@@ -80,7 +79,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/downloads/{id}/chapters/{idx}/pages/{name}", s.getPage)
 	s.mux.HandleFunc("DELETE /api/downloads/{id}/chapters/{idx}/pages/{name}", s.deletePage)
 	s.mux.HandleFunc("GET /api/events", s.events)
-	s.mux.HandleFunc("POST /api/preview", s.preview)
 }
 
 // chapterLoc resolve (título, volume, rótulo do capítulo) de um capítulo de um job.
@@ -404,36 +402,6 @@ func (s *Server) pickFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"downloadDir": dir})
-}
-
-type previewReq struct {
-	Source  string         `json:"source"`
-	Chapter domain.Chapter `json:"chapter"`
-	Count   int            `json:"count"`
-}
-
-func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
-	var req previewReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
-		return
-	}
-	if req.Source == "" {
-		writeError(w, http.StatusBadRequest, "missing source")
-		return
-	}
-	head, tail, err := s.deps.Previewer.Preview(r.Context(), req.Source, req.Chapter, req.Count)
-	if err != nil {
-		writeUseErr(w, err)
-		return
-	}
-	if head == nil {
-		head = []string{}
-	}
-	if tail == nil {
-		tail = []string{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"images": head, "tail": tail})
 }
 
 func writeUseErr(w http.ResponseWriter, err error) {

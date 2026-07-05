@@ -584,7 +584,6 @@ function ObraPage() {
       {/* ── Modo volumes ──────────────────────────────────────────────────────── */}
       {mode === 'volume' && (
         <VolumeBuilder
-          source={source}
           chapters={sortedChapters}
           submitting={submitting}
           onDownload={handleVolumeDownload}
