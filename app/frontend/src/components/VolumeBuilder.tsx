@@ -7,7 +7,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Download,
   Layers,
   Plus,
   Search,
@@ -1000,10 +999,10 @@ export function VolumeBuilder({
                 disabled={volumes.length === 0 || submitting}
                 className="flex items-center gap-2 rounded-xl bg-zinc-100 px-5 py-2 font-semibold text-zinc-900 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Download size={15} aria-hidden="true" />
+                <ArrowRight size={15} aria-hidden="true" />
                 {submitting
                   ? 'Enviando…'
-                  : `Baixar ${volumes.length} ${volumes.length === 1 ? 'volume' : 'volumes'}`}
+                  : `Revisar e baixar (${volumes.length} ${volumes.length === 1 ? 'volume' : 'volumes'})`}
               </button>
               {unassigned.length > 0 && volumes.length > 0 && (
                 <p className="text-xs text-amber-400">
@@ -1031,10 +1030,10 @@ export function VolumeBuilder({
           disabled={volumes.length === 0 || submitting}
           className="flex items-center gap-2 rounded-xl bg-zinc-100 px-6 py-2.5 font-semibold text-zinc-900 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Download size={16} aria-hidden="true" />
+          <ArrowRight size={16} aria-hidden="true" />
           {submitting
             ? 'Enviando…'
-            : `Baixar ${volumes.length} ${volumes.length === 1 ? 'volume' : 'volumes'}`}
+            : `Revisar e baixar (${volumes.length} ${volumes.length === 1 ? 'volume' : 'volumes'})`}
         </button>
         {unassigned.length > 0 && volumes.length > 0 && (
           <p className="text-xs text-amber-400">
