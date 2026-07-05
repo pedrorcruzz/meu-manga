@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"meumanga/internal/domain"
 )
 
 // Store persists chapter pages under a root directory as ordered image files.
@@ -167,6 +169,324 @@ func numPrefix(name string) int {
 		n = n*10 + int(c-'0')
 	}
 	return n
+}
+
+// ── Editor "Consertar volumes": leitura e edição da pasta em disco ──────────────
+//
+// O editor é folder-first: endereça por NOMES DE PASTA reais dentro de
+// <root>/Sanitize(manga)/, sem depender de job/task index nem de metadados. As
+// mutações não travam s.mu (seguem o padrão de SavePage/DeletePage, que também
+// não travam) — a proteção contra corrida com um download em andamento é o
+// guard 409 no usecase (MangaEditor).
+
+// MangaDir devolve (sem criar) a pasta raiz de uma obra.
+func (s *Store) MangaDir(manga string) string {
+	return filepath.Join(s.Root(), Sanitize(manga))
+}
+
+// subdir devolve a pasta de um volume (ou a raiz do mangá quando volFolder="").
+func (s *Store) subdir(manga, volFolder string) string {
+	if volFolder == "" {
+		return s.MangaDir(manga)
+	}
+	return filepath.Join(s.MangaDir(manga), volFolder)
+}
+
+// ScanManga varre a pasta da obra e devolve a árvore de volumes e capítulos
+// soltos, contando páginas de fato no disco. Pasta inexistente = árvore vazia.
+func (s *Store) ScanManga(manga string) (domain.MangaTree, error) {
+	root := s.MangaDir(manga)
+	tree := domain.MangaTree{Manga: manga, Root: root}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return tree, nil
+		}
+		return domain.MangaTree{}, err
+	}
+	volPrefix := Sanitize(manga) + " "
+	for _, e := range entries {
+		if !e.IsDir() || isHidden(e.Name()) {
+			continue
+		}
+		name := e.Name()
+		if label, ok := strings.CutPrefix(name, volPrefix); ok {
+			tree.Volumes = append(tree.Volumes, domain.VolumeNode{
+				Folder:   name,
+				Name:     label,
+				Chapters: scanChapters(filepath.Join(root, name)),
+			})
+			continue
+		}
+		// subpasta que não é volume: capítulo solto (modo simples)
+		tree.Loose = append(tree.Loose, chapterNode(filepath.Join(root, name), name))
+	}
+	sort.Slice(tree.Volumes, func(i, j int) bool {
+		return numVal(tree.Volumes[i].Name) < numVal(tree.Volumes[j].Name)
+	})
+	sortChapters(tree.Loose)
+	return tree, nil
+}
+
+// scanChapters lê as pastas de capítulo dentro de um volume, em ordem numérica.
+func scanChapters(volDir string) []domain.ChapterNode {
+	entries, err := os.ReadDir(volDir)
+	if err != nil {
+		return nil
+	}
+	var out []domain.ChapterNode
+	for _, e := range entries {
+		if !e.IsDir() || isHidden(e.Name()) {
+			continue
+		}
+		out = append(out, chapterNode(filepath.Join(volDir, e.Name()), e.Name()))
+	}
+	sortChapters(out)
+	return out
+}
+
+// chapterNode monta o nó de um capítulo a partir da sua pasta.
+func chapterNode(dir, folder string) domain.ChapterNode {
+	imgs := imagesIn(dir)
+	node := domain.ChapterNode{
+		Folder: folder,
+		Number: strings.TrimSpace(strings.TrimPrefix(folder, "Cap ")),
+		Pages:  len(imgs),
+	}
+	if len(imgs) > 0 {
+		node.FirstPage = imgs[0]
+	}
+	return node
+}
+
+// ReadRawPage lê os bytes de uma página endereçada por nomes de pasta (editor).
+// Rejeita segmentos inseguros (path traversal).
+func (s *Store) ReadRawPage(manga, volFolder, chapterFolder, name string) ([]byte, error) {
+	if !safeSeg(chapterFolder) || !safeSeg(name) {
+		return nil, os.ErrNotExist
+	}
+	if volFolder != "" && !safeSeg(volFolder) {
+		return nil, os.ErrNotExist
+	}
+	return os.ReadFile(filepath.Join(s.subdir(manga, volFolder), chapterFolder, name))
+}
+
+// MoveChapter move a pasta de um capítulo de um volume para outro (os.Rename no
+// mesmo FS). Cria o volume destino; colisão → ErrChapterExists; remove o volume
+// origem se ficar vazio. As páginas internas não são tocadas.
+func (s *Store) MoveChapter(manga, fromVol, toVol, chapterFolder string) error {
+	if !safeSeg(chapterFolder) {
+		return os.ErrNotExist
+	}
+	if (fromVol != "" && !safeSeg(fromVol)) || (toVol != "" && !safeSeg(toVol)) {
+		return os.ErrNotExist
+	}
+	srcParent := s.subdir(manga, fromVol)
+	dstParent := s.subdir(manga, toVol)
+	src := filepath.Join(srcParent, chapterFolder)
+	dst := filepath.Join(dstParent, chapterFolder)
+	if src == dst {
+		return nil
+	}
+	if _, err := os.Stat(dst); err == nil {
+		return domain.ErrChapterExists
+	}
+	if err := os.MkdirAll(dstParent, 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	if fromVol != "" {
+		removeIfEmpty(srcParent)
+	}
+	return nil
+}
+
+// RenameChapter corrige o número de um capítulo renomeando a pasta "Cap old"
+// para "Cap new" no mesmo volume. Colisão com um número existente → ErrChapterExists.
+func (s *Store) RenameChapter(manga, volFolder, oldNumber, newNumber string) error {
+	oldFolder := Sanitize("Cap " + oldNumber)
+	newFolder := Sanitize("Cap " + newNumber)
+	if !safeSeg(oldFolder) || !safeSeg(newFolder) {
+		return os.ErrNotExist
+	}
+	if volFolder != "" && !safeSeg(volFolder) {
+		return os.ErrNotExist
+	}
+	parent := s.subdir(manga, volFolder)
+	src := filepath.Join(parent, oldFolder)
+	dst := filepath.Join(parent, newFolder)
+	if src == dst {
+		return nil
+	}
+	if _, err := os.Stat(dst); err == nil {
+		return domain.ErrChapterExists
+	}
+	return os.Rename(src, dst)
+}
+
+// SetCover define a capa do volume como a 001.jpg do seu 1º capítulo (por número).
+// insert=true empurra as páginas em +1 (adicionar); insert=false sobrescreve a
+// 001.jpg (trocar). O jpeg já vem convertido pelo handler.
+func (s *Store) SetCover(manga, volFolder string, jpeg []byte, insert bool) error {
+	if volFolder != "" && !safeSeg(volFolder) {
+		return os.ErrNotExist
+	}
+	parent := s.subdir(manga, volFolder)
+	chFolder, ok := firstChapterFolder(parent)
+	if !ok {
+		return os.ErrNotExist
+	}
+	dir := filepath.Join(parent, chFolder)
+	if insert {
+		if err := shiftPagesUp(dir); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(filepath.Join(dir, "001.jpg"), jpeg, 0o644)
+}
+
+// RemoveCover apaga a 1ª página (capa) do 1º capítulo do volume e renumera o
+// restante. Sem páginas → ErrNoCover.
+func (s *Store) RemoveCover(manga, volFolder string) error {
+	if volFolder != "" && !safeSeg(volFolder) {
+		return os.ErrNotExist
+	}
+	parent := s.subdir(manga, volFolder)
+	chFolder, ok := firstChapterFolder(parent)
+	if !ok {
+		return os.ErrNotExist
+	}
+	dir := filepath.Join(parent, chFolder)
+	names := imagesIn(dir)
+	if len(names) == 0 {
+		return domain.ErrNoCover
+	}
+	if err := os.Remove(filepath.Join(dir, names[0])); err != nil {
+		return err
+	}
+	return renumber(dir)
+}
+
+// shiftPagesUp renomeia 00N→00N+1 (do maior para o menor) para abrir a 001.jpg.
+func shiftPagesUp(dir string) error {
+	names := imagesIn(dir)
+	for i := len(names) - 1; i >= 0; i-- {
+		want := fmt.Sprintf("%03d.jpg", i+2)
+		if names[i] != want {
+			if err := os.Rename(filepath.Join(dir, names[i]), filepath.Join(dir, want)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// firstChapterFolder devolve a pasta do capítulo numericamente primeiro de um volume.
+func firstChapterFolder(parent string) (string, bool) {
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return "", false
+	}
+	var folders []string
+	for _, e := range entries {
+		if e.IsDir() && !isHidden(e.Name()) {
+			folders = append(folders, e.Name())
+		}
+	}
+	if len(folders) == 0 {
+		return "", false
+	}
+	sort.Slice(folders, func(i, j int) bool { return numVal(folders[i]) < numVal(folders[j]) })
+	return folders[0], true
+}
+
+// imagesIn lista as imagens de uma pasta em ordem numérica, sem criá-la.
+func imagesIn(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && isImageName(e.Name()) {
+			names = append(names, e.Name())
+		}
+	}
+	sortNumeric(names)
+	return names
+}
+
+// sortChapters ordena capítulos pelo valor numérico do número (aceita "10.5").
+func sortChapters(chs []domain.ChapterNode) {
+	sort.Slice(chs, func(i, j int) bool { return numVal(chs[i].Number) < numVal(chs[j].Number) })
+}
+
+// removeIfEmpty remove a pasta se ela não tiver nenhuma entrada visível (ignora
+// dotfiles como .DS_Store/._*). No-op se ainda houver conteúdo real.
+func removeIfEmpty(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !isHidden(e.Name()) {
+			return
+		}
+	}
+	_ = os.RemoveAll(dir)
+}
+
+// isHidden reporta dotfiles (inclui .DS_Store e AppleDouble "._*").
+func isHidden(name string) bool { return strings.HasPrefix(name, ".") }
+
+// safeSeg valida que s é um único segmento de caminho seguro (sem separadores,
+// sem "..", não vazio) — barreira contra path traversal nos endpoints do editor.
+func safeSeg(s string) bool {
+	if s == "" || s == "." || s == ".." {
+		return false
+	}
+	return !strings.ContainsAny(s, `/\`) && !strings.ContainsRune(s, 0)
+}
+
+// numVal extrai o primeiro número (com decimal) de uma string, ex.: "Cap 10.5"→10.5,
+// "Volume 15"→15. Sem dígitos → 0.
+func numVal(s string) float64 {
+	i := 0
+	for i < len(s) && (s[i] < '0' || s[i] > '9') {
+		i++
+	}
+	start := i
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i < len(s) && s[i] == '.' {
+		i++
+		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			i++
+		}
+	}
+	if start == i {
+		return 0
+	}
+	var whole, frac float64
+	var fracDiv float64 = 1
+	seenDot := false
+	for _, c := range s[start:i] {
+		if c == '.' {
+			seenDot = true
+			continue
+		}
+		d := float64(c - '0')
+		if seenDot {
+			fracDiv *= 10
+			frac += d / fracDiv
+		} else {
+			whole = whole*10 + d
+		}
+	}
+	return whole + frac
 }
 
 // Sanitize turns an arbitrary label into a safe path segment.

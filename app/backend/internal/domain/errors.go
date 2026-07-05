@@ -25,6 +25,13 @@ var (
 	ErrNoPages = errors.New("nenhuma página capturada (leitor bloqueado?)")
 	// ErrNothingToRetry means a job has no pending chapters left to redo.
 	ErrNothingToRetry = errors.New("nada para refazer — todos os capítulos já foram baixados")
+	// ErrChapterExists means a move/rename target folder already holds that chapter.
+	ErrChapterExists = errors.New("já existe um capítulo com esse número no destino")
+	// ErrEditBusy means the manga has a download running/queued, so editing its
+	// folder on disk would race with the writer. The user should wait it out.
+	ErrEditBusy = errors.New("há um download em andamento para esta obra — aguarde terminar para consertar os volumes")
+	// ErrNoCover means a cover removal was requested but the chapter has no pages.
+	ErrNoCover = errors.New("este volume não tem capa para remover")
 )
 
 // blockPrefix é o prefixo estável da mensagem de bloqueio temporário. O frontend

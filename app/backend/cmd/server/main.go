@@ -83,6 +83,9 @@ func main() {
 		usecase.WithChapterDelay(cfg.ChapterDelay),
 		usecase.WithRetention(cfg.HistoryRetention))
 	settings := usecase.NewSettings(store, dialog.New())
+	// editor "Consertar volumes": lê/edita a pasta em disco (mesmo store), com
+	// guard contra corrida com downloads em andamento (via o registro de jobs).
+	editor := usecase.NewMangaEditor(store, downloader)
 
 	// sonda leve: bate no endpoint de busca e confere 200 (sessão realmente passa o CF)
 	probe := func(ctx context.Context) bool {
@@ -122,6 +125,7 @@ func main() {
 		Probe:     probe,
 		Quit:      quit,
 		Files:     store,
+		Editor:    editor,
 	})
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: server.Handler()}

@@ -40,3 +40,28 @@ type ChapterList struct {
 	Manga    Manga     `json:"manga"`
 	Chapters []Chapter `json:"chapters"`
 }
+
+// ── Editor "Consertar volumes": árvore lida da pasta em disco ───────────────────
+
+// ChapterNode é um capítulo lido do disco (pasta "Cap N").
+type ChapterNode struct {
+	Folder    string `json:"folder"`    // nome da pasta, ex.: "Cap 5"
+	Number    string `json:"number"`    // número, ex.: "5" (de "Cap 5")
+	Pages     int    `json:"pages"`     // imagens no disco
+	FirstPage string `json:"firstPage"` // 1ª imagem (para thumb), "" se vazio
+}
+
+// VolumeNode é um volume lido do disco (subpasta "<manga> <volume>").
+type VolumeNode struct {
+	Folder   string        `json:"folder"` // nome da subpasta cru
+	Name     string        `json:"name"`   // rótulo do volume (prefixo do mangá removido)
+	Chapters []ChapterNode `json:"chapters"`
+}
+
+// MangaTree é a árvore em disco de uma obra (volumes + capítulos soltos).
+type MangaTree struct {
+	Manga   string        `json:"manga"`
+	Root    string        `json:"root"` // caminho absoluto da pasta do mangá
+	Volumes []VolumeNode  `json:"volumes"`
+	Loose   []ChapterNode `json:"loose"` // capítulos direto sob o mangá (modo simples)
+}

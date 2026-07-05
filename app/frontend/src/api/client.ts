@@ -181,6 +181,36 @@ export interface PagesResponse {
   pages: string[]
 }
 
+/** Capítulo lido da pasta em disco (editor "Consertar volumes"). */
+export interface TreeChapter {
+  /** Nome da pasta, ex.: "Cap 5". */
+  folder: string
+  /** Número, ex.: "5". */
+  number: string
+  /** Nº de imagens no disco. */
+  pages: number
+  /** 1ª imagem (miniatura), "" se vazio. */
+  firstPage: string
+}
+
+/** Volume lido da pasta em disco. */
+export interface TreeVolume {
+  /** Nome da subpasta cru, ex.: "Minha Obra Volume 01". */
+  folder: string
+  /** Rótulo do volume (prefixo do mangá removido), ex.: "Volume 01". */
+  name: string
+  chapters: TreeChapter[]
+}
+
+/** Árvore em disco de uma obra: volumes + capítulos soltos (modo simples). */
+export interface MangaTree {
+  manga: string
+  /** Caminho absoluto da pasta do mangá. */
+  root: string
+  volumes: TreeVolume[]
+  loose: TreeChapter[]
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}/api${path}`, {
     headers: { 'content-type': 'application/json' },
@@ -285,6 +315,57 @@ export const api = {
   deletePage: (jobId: string, taskIndex: number, name: string) =>
     req<PagesResponse>(
       `/downloads/${encodeURIComponent(jobId)}/chapters/${String(taskIndex)}/pages/${encodeURIComponent(name)}`,
+      { method: 'DELETE' },
+    ),
+  // ── Editor "Consertar volumes" (folder-first, lê/edita a pasta em disco) ──────
+  /** Lê a árvore em disco da obra do job (volumes, capítulos, páginas). */
+  getMangaTree: (jobId: string) =>
+    req<MangaTree>(`/downloads/${encodeURIComponent(jobId)}/tree`),
+  /**
+   * URL direta de uma página endereçada por nomes de pasta (para <img src>).
+   * `vol` vazio = capítulo solto (modo simples). Não faz fetch - só monta a URL.
+   */
+  mangaPageUrl: (
+    jobId: string,
+    vol: string,
+    chap: string,
+    name: string,
+  ): string =>
+    `${API_BASE}/api/downloads/${encodeURIComponent(jobId)}/tree/page?vol=${encodeURIComponent(vol)}&chap=${encodeURIComponent(chap)}&name=${encodeURIComponent(name)}`,
+  /** Move a pasta de um capítulo entre volumes. Devolve a árvore atualizada. */
+  moveChapter: (
+    jobId: string,
+    body: { fromVolume: string; toVolume: string; chapter: string },
+  ) =>
+    req<MangaTree>(`/downloads/${encodeURIComponent(jobId)}/tree/move`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  /** Corrige o número de um capítulo (renomeia "Cap N"). */
+  renameChapter: (
+    jobId: string,
+    body: { volume: string; oldNumber: string; newNumber: string },
+  ) =>
+    req<MangaTree>(`/downloads/${encodeURIComponent(jobId)}/tree/rename`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  /**
+   * Define a capa de um volume. `mode: 'insert'` adiciona (empurra as páginas
+   * em +1); `mode: 'replace'` troca a 001.jpg existente. `image` é um data URL.
+   */
+  setCover: (
+    jobId: string,
+    body: { volume: string; image: string; mode: 'insert' | 'replace' },
+  ) =>
+    req<MangaTree>(`/downloads/${encodeURIComponent(jobId)}/tree/cover`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  /** Remove a capa de um volume. */
+  removeCover: (jobId: string, volume: string) =>
+    req<MangaTree>(
+      `/downloads/${encodeURIComponent(jobId)}/tree/cover?vol=${encodeURIComponent(volume)}`,
       { method: 'DELETE' },
     ),
   /** Encerra o backend e o servidor de desenvolvimento. Falhas de rede são

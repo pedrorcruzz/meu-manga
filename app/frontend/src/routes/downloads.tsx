@@ -22,6 +22,7 @@ import {
   Search,
   Trash2,
   Turtle,
+  Wrench,
   X,
   XCircle,
 } from 'lucide-react'
@@ -37,6 +38,7 @@ import {
 import { useDownloadEvents } from '~/api/events'
 import { ConfirmDialog } from '~/components/ConfirmDialog'
 import { PageGallery } from '~/components/PageGallery'
+import { VolumeEditor } from '~/components/VolumeEditor'
 import { useSessionContext } from '~/context/session'
 import { useAsync } from '~/hooks/useAsync'
 import { useIncremental } from '~/hooks/useIncremental'
@@ -973,6 +975,8 @@ function JobCard({
   > | null>(null)
   const [verifying, setVerifying] = useState(false)
   const [diskRoot, setDiskRoot] = useState('')
+  // Editor "Consertar volumes" (folder-first, lê/edita a pasta em disco).
+  const [showEditor, setShowEditor] = useState(false)
 
   async function verifyDisk() {
     setVerifying(true)
@@ -1199,7 +1203,25 @@ function JobCard({
                 {diskRoot}
               </span>
             )}
+            {!active && job.completedChapters > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowEditor(true)}
+                className="ml-auto flex items-center gap-1.5 rounded-lg border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-300 transition-colors hover:bg-neutral-800"
+                title="Reorganizar os volumes na pasta em disco (mover capítulos, capa, corrigir número) sem re-baixar"
+              >
+                <Wrench size={11} aria-hidden="true" />
+                Consertar volumes
+              </button>
+            )}
           </div>
+          {showEditor && (
+            <VolumeEditor
+              jobId={job.jobId}
+              title={job.title}
+              onClose={() => setShowEditor(false)}
+            />
+          )}
           {detail ? (
             detail.tasks.length > 0 ? (
               (() => {

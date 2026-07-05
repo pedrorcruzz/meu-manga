@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +32,9 @@ type Deps struct {
 	Quit func()
 	// Files acessa as páginas já baixadas (preview / apagar).
 	Files FileStore
+	// Editor é o "Consertar volumes": lê/edita a pasta em disco da obra (mover
+	// capítulo, capa, corrigir número), sem re-scrapear o site.
+	Editor *usecase.MangaEditor
 }
 
 // FileStore lista, lê e apaga páginas baixadas de um capítulo.
@@ -78,6 +82,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/downloads/{id}/chapters/{idx}/pages", s.listPages)
 	s.mux.HandleFunc("GET /api/downloads/{id}/chapters/{idx}/pages/{name}", s.getPage)
 	s.mux.HandleFunc("DELETE /api/downloads/{id}/chapters/{idx}/pages/{name}", s.deletePage)
+	// Editor "Consertar volumes" — folder-first, lê/edita a pasta em disco.
+	s.mux.HandleFunc("GET /api/downloads/{id}/tree", s.getTree)
+	s.mux.HandleFunc("GET /api/downloads/{id}/tree/page", s.getTreePage)
+	s.mux.HandleFunc("POST /api/downloads/{id}/tree/move", s.moveChapter)
+	s.mux.HandleFunc("POST /api/downloads/{id}/tree/rename", s.renameChapter)
+	s.mux.HandleFunc("PUT /api/downloads/{id}/tree/cover", s.putCover)
+	s.mux.HandleFunc("DELETE /api/downloads/{id}/tree/cover", s.deleteCover)
 	s.mux.HandleFunc("GET /api/events", s.events)
 }
 
@@ -137,6 +148,110 @@ func (s *Server) deletePage(w http.ResponseWriter, r *http.Request) {
 	}
 	names, _ := s.deps.Files.ListPages(manga, vol, chap)
 	writeJSON(w, http.StatusOK, map[string]any{"pages": names})
+}
+
+// ── Editor "Consertar volumes" (folder-first) ───────────────────────────────────
+
+// getTree devolve a árvore em disco da obra (volumes + capítulos + páginas).
+func (s *Server) getTree(w http.ResponseWriter, r *http.Request) {
+	tree, err := s.deps.Editor.Tree(r.PathValue("id"))
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+// getTreePage serve uma página do disco endereçada por nomes de pasta
+// (?vol=&chap=&name=). vol vazio = capítulo solto (modo simples).
+func (s *Server) getTreePage(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	data, err := s.deps.Editor.Page(r.PathValue("id"), q.Get("vol"), q.Get("chap"), q.Get("name"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "page not found")
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
+type moveReq struct {
+	FromVolume string `json:"fromVolume"`
+	ToVolume   string `json:"toVolume"`
+	Chapter    string `json:"chapter"` // nome da pasta, ex.: "Cap 5"
+}
+
+// moveChapter move a pasta de um capítulo entre volumes.
+func (s *Server) moveChapter(w http.ResponseWriter, r *http.Request) {
+	var req moveReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chapter == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.Editor.Move(r.PathValue("id"), req.FromVolume, req.ToVolume, req.Chapter)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+type renameReq struct {
+	Volume    string `json:"volume"` // nome da subpasta do volume ("" = modo simples)
+	OldNumber string `json:"oldNumber"`
+	NewNumber string `json:"newNumber"`
+}
+
+// renameChapter corrige o número de um capítulo (renomeia "Cap N").
+func (s *Server) renameChapter(w http.ResponseWriter, r *http.Request) {
+	var req renameReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.OldNumber == "" || req.NewNumber == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.Editor.Rename(r.PathValue("id"), req.Volume, req.OldNumber, req.NewNumber)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+type coverReq struct {
+	Volume string `json:"volume"`
+	Image  string `json:"image"` // data URL (qualquer formato); convertido para JPEG
+	Mode   string `json:"mode"`  // "insert" (adicionar, empurra páginas) | "replace" (trocar)
+}
+
+// putCover adiciona ou troca a capa de um volume (001.jpg do 1º capítulo).
+func (s *Server) putCover(w http.ResponseWriter, r *http.Request) {
+	var req coverReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Image == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	jpeg, err := decodeCover(req.Image)
+	if err != nil || len(jpeg) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid image")
+		return
+	}
+	tree, err := s.deps.Editor.SetCover(r.PathValue("id"), req.Volume, jpeg, req.Mode != "replace")
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+// deleteCover remove a capa de um volume (?vol=).
+func (s *Server) deleteCover(w http.ResponseWriter, r *http.Request) {
+	tree, err := s.deps.Editor.RemoveCover(r.PathValue("id"), r.URL.Query().Get("vol"))
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
 }
 
 // quit encerra o programa após responder (o frontend usa isto no "Encerrar").
@@ -413,9 +528,13 @@ func writeUseErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrSourceNotFound),
 		errors.Is(err, domain.ErrJobNotFound),
+		errors.Is(err, domain.ErrNoCover),
+		errors.Is(err, os.ErrNotExist),
 		errors.Is(err, domain.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, domain.ErrNothingToRetry):
+	case errors.Is(err, domain.ErrNothingToRetry),
+		errors.Is(err, domain.ErrEditBusy),
+		errors.Is(err, domain.ErrChapterExists):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, domain.ErrNoSession):
 		writeError(w, http.StatusFailedDependency, err.Error())
