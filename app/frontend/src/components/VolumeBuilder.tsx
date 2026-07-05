@@ -525,9 +525,9 @@ export function VolumeBuilder({
               type="button"
               onClick={openSmartPopup}
               disabled={chapters.length === 0}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg border border-violet-800/40 bg-violet-950/30 px-4 py-2.5 text-sm font-medium text-violet-300 transition-colors hover:border-violet-700/50 hover:bg-violet-900/40 disabled:opacity-50${sakuraSuccess ? ' vol-success' : ''}`}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-lg border border-violet-800/40 bg-violet-950/30 px-4 py-2.5 text-sm font-medium text-neutral-100 transition-colors hover:border-violet-700/50 hover:bg-violet-900/40 disabled:opacity-50${sakuraSuccess ? ' vol-success' : ''}`}
             >
-              <Zap size={15} className="text-yellow-400" aria-hidden="true" />
+              <Zap size={15} className="text-white" aria-hidden="true" />
               Volume Inteligente
             </button>
             <HelpButton label="O que é o Volume Inteligente?">
@@ -573,7 +573,8 @@ export function VolumeBuilder({
         {unassigned.length > 0 && (
           <span className="flex items-center gap-1 font-medium text-amber-400">
             <AlertTriangle size={13} aria-hidden="true" />
-            {unassigned.length} sem volume
+            {unassigned.length}{' '}
+            {unassigned.length === 1 ? 'capítulo' : 'capítulos'} sem volume
           </span>
         )}
       </div>
