@@ -4,19 +4,32 @@
 // (lançamentos recentes) aparecem num painel próprio, onde dá para montá-los
 // em volumes escolhendo os capítulos e quantos por volume.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   AlertTriangle,
   BookOpen,
   Check,
+  ChevronDown,
+  ImagePlus,
   Layers,
+  Loader2,
   Plus,
   Search,
   X,
 } from 'lucide-react'
-import type { Chapter } from '~/api/client'
-import type { Volume } from './VolumeCard'
+import { api, type Chapter } from '~/api/client'
+import type { Volume, PreviewState } from './VolumeCard'
 import { useIncremental } from '~/hooks/useIncremental'
+
+/** Lê um arquivo de imagem como data URL base64 (qualquer formato). */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error('Erro ao ler o arquivo'))
+    reader.readAsDataURL(file)
+  })
+}
 
 /** Faixa de capítulos de um volume, ex.: "Cap. 1 - 14" ou "Cap. 7". */
 function chapterRange(vol: Volume): string {
@@ -87,10 +100,17 @@ function maxVolNum(vols: Volume[]): number {
 
 interface VolumeSelectModalProps {
   title: string
+  /** Source id da obra, ex.: "sakura". Necessário para o endpoint de preview. */
+  source: string
   /** Volumes propostos automaticamente. */
   volumes: Volume[]
   /** Capítulos que a fonte não colocou em nenhum volume. */
   leftoverChapters?: Chapter[]
+  /**
+   * Cache de imagens de preview compartilhado com o VolumeBuilder, para não
+   * refazer o fetch ao confirmar. Chave: `${chapter.id}:3`.
+   */
+  previewCache?: React.MutableRefObject<Map<string, string[]>>
   /** Recebe apenas os volumes marcados pelo usuário (propostos + montados aqui). */
   onConfirm: (selected: Volume[]) => void
   onClose: () => void
@@ -98,8 +118,10 @@ interface VolumeSelectModalProps {
 
 export function VolumeSelectModal({
   title,
+  source,
   volumes,
   leftoverChapters = [],
+  previewCache,
   onConfirm,
   onClose,
 }: VolumeSelectModalProps) {
@@ -142,6 +164,96 @@ export function VolumeSelectModal({
     return t ? String(t.mode) : '10'
   })
   const [showLeftover, setShowLeftover] = useState(leftoverChapters.length > 0)
+
+  // ── Preview das páginas + capa por volume ──────────────────────────────────
+  // Cards expandidos (mostrando as 3 páginas do 1º cap + upload de capa).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Estado de preview por volume (carregado sob demanda ao expandir).
+  const [previews, setPreviews] = useState<Record<string, PreviewState>>({})
+  // Capas escolhidas aqui dentro, por id de volume. Sobrepõem vol.coverImage.
+  const [covers, setCovers] = useState<Record<string, string | null>>({})
+  const [coverErrors, setCoverErrors] = useState<Record<string, string>>({})
+  // Cache local usado quando o VolumeBuilder não passa um compartilhado.
+  const localCacheRef = useRef<Map<string, string[]>>(new Map())
+  const cacheRef = previewCache ?? localCacheRef
+  // Input de arquivo único, reaproveitado para qualquer volume (via target).
+  const coverInputRef = useRef<HTMLInputElement>(null)
+  const coverTargetRef = useRef<string | null>(null)
+
+  /** Capa efetiva do volume: a escolhida aqui tem prioridade sobre a da fonte. */
+  function effectiveCover(vol: Volume): string | null {
+    return vol.id in covers ? covers[vol.id] : vol.coverImage
+  }
+
+  /** Busca as 3 primeiras páginas do 1º capítulo do volume (com cache). */
+  function fetchPreview(vol: Volume) {
+    const ch = vol.chapters[0]
+    if (!ch) return
+    const key = `${ch.id}:3`
+    const cached = cacheRef.current.get(key)
+    if (cached) {
+      setPreviews((p) => ({ ...p, [vol.id]: { status: 'loaded', images: cached } }))
+      return
+    }
+    setPreviews((p) => ({ ...p, [vol.id]: { status: 'loading' } }))
+    api
+      .previewChapter(source, ch, 3)
+      .then((res) => {
+        cacheRef.current.set(key, res.images)
+        setPreviews((p) => ({
+          ...p,
+          [vol.id]: { status: 'loaded', images: res.images },
+        }))
+      })
+      .catch(() => {
+        setPreviews((p) => ({ ...p, [vol.id]: { status: 'error' } }))
+      })
+  }
+
+  /** Abre/fecha o painel de páginas do volume; carrega o preview ao abrir. */
+  function toggleExpand(vol: Volume) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(vol.id)) {
+        next.delete(vol.id)
+      } else {
+        next.add(vol.id)
+        if (!previews[vol.id]) fetchPreview(vol)
+      }
+      return next
+    })
+  }
+
+  function pickCover(volId: string) {
+    coverTargetRef.current = volId
+    coverInputRef.current?.click()
+  }
+
+  async function onCoverFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    const volId = coverTargetRef.current
+    if (!file || !volId) return
+    setCoverErrors((prev) => {
+      const next = { ...prev }
+      delete next[volId]
+      return next
+    })
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      setCovers((prev) => ({ ...prev, [volId]: dataUrl }))
+    } catch (err) {
+      setCoverErrors((prev) => ({
+        ...prev,
+        [volId]: err instanceof Error ? err.message : 'Erro ao carregar imagem',
+      }))
+    } finally {
+      e.target.value = ''
+    }
+  }
+
+  function removeCover(volId: string) {
+    setCovers((prev) => ({ ...prev, [volId]: null }))
+  }
 
   // Volumes visíveis após a busca - as ações de marcar operam sobre este subconjunto.
   const visibleVolumes = useMemo(() => {
@@ -223,7 +335,9 @@ export function VolumeSelectModal({
   }
 
   function confirm() {
-    const chosen = allVolumes.filter((v) => selected.has(v.id))
+    const chosen = allVolumes
+      .filter((v) => selected.has(v.id))
+      .map((v) => (v.id in covers ? { ...v, coverImage: covers[v.id] } : v))
     if (chosen.length === 0) return
     onConfirm(chosen)
   }
@@ -287,6 +401,15 @@ export function VolumeSelectModal({
       }}
     >
       <div className="vol-modal-panel flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl">
+        {/* Input de arquivo único, reaproveitado para a capa de qualquer volume */}
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={onCoverFile}
+          aria-label="Escolher capa do volume"
+        />
         {/* Cabeçalho */}
         <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
           <div className="flex items-center gap-2.5">
@@ -522,87 +645,185 @@ export function VolumeSelectModal({
                 const checked = selected.has(vol.id)
                 const num = volNumber.get(vol.id) ?? 0
                 const isExtra = extraIds.has(vol.id)
+                const cover = effectiveCover(vol)
+                const isOpen = expanded.has(vol.id)
+                const prev = previews[vol.id]
+                const coverErr = coverErrors[vol.id]
                 return (
-                  <button
+                  <div
                     key={vol.id}
-                    type="button"
-                    onClick={() => toggle(vol.id)}
-                    aria-pressed={checked}
-                    title={chaptersTooltip(vol)}
-                    className={`group relative flex flex-col overflow-hidden rounded-xl border text-left transition-all ${
+                    className={`group relative flex flex-col overflow-hidden rounded-xl border transition-all ${
                       checked
                         ? 'border-neutral-200/80 bg-neutral-800/40 ring-1 ring-neutral-200/20'
                         : 'border-neutral-800 bg-neutral-900/60 opacity-60 hover:opacity-100'
                     }`}
                   >
-                    {/* Marca de seleção */}
-                    <span
-                      className={`absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
-                        checked
-                          ? 'border-neutral-200 bg-neutral-100 text-neutral-900'
-                          : 'border-neutral-600 bg-neutral-900/80 text-transparent'
-                      }`}
+                    {/* Região de seleção (capa + rótulo) */}
+                    <button
+                      type="button"
+                      onClick={() => toggle(vol.id)}
+                      aria-pressed={checked}
+                      title={chaptersTooltip(vol)}
+                      className="flex flex-col text-left"
                     >
-                      <Check size={12} strokeWidth={3} aria-hidden="true" />
-                    </span>
+                      {/* Marca de seleção */}
+                      <span
+                        className={`absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
+                          checked
+                            ? 'border-neutral-200 bg-neutral-100 text-neutral-900'
+                            : 'border-neutral-600 bg-neutral-900/80 text-transparent'
+                        }`}
+                      >
+                        <Check size={12} strokeWidth={3} aria-hidden="true" />
+                      </span>
 
-                    {/* Área da "capa" */}
-                    <div
-                      className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden ${
-                        vol.coverImage
-                          ? ''
-                          : 'bg-gradient-to-br from-neutral-800 to-neutral-950'
-                      }`}
-                    >
-                      {vol.coverImage ? (
-                        <img
-                          src={vol.coverImage}
-                          alt={`Capa de ${vol.name}`}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center gap-1.5 px-2 text-center">
-                          <BookOpen
-                            size={22}
-                            className="text-neutral-600"
-                            aria-hidden="true"
+                      {/* Área da "capa" */}
+                      <div
+                        className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden ${
+                          cover
+                            ? ''
+                            : 'bg-gradient-to-br from-neutral-800 to-neutral-950'
+                        }`}
+                      >
+                        {cover ? (
+                          <img
+                            src={cover}
+                            alt={`Capa de ${vol.name}`}
+                            className="h-full w-full object-cover"
                           />
-                          <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
-                            Volume
-                          </span>
-                          <span className="font-mono text-2xl font-bold leading-none text-neutral-200">
-                            {num}
-                          </span>
-                        </div>
-                      )}
-                      {/* Lombada decorativa */}
-                      <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
-                      {isExtra && (
-                        <span className="absolute left-2 top-2 rounded bg-violet-600/70 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
-                          novo
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Rótulo do volume */}
-                    <div className="space-y-0.5 border-t border-neutral-800 px-2.5 py-2">
-                      <p className="truncate font-mono text-xs font-bold text-neutral-100">
-                        {vol.name}
-                        {vol.label && (
-                          <span className="ml-1 font-sans font-normal text-neutral-600">
-                            {vol.label}
+                        ) : (
+                          <div className="flex flex-col items-center gap-1.5 px-2 text-center">
+                            <BookOpen
+                              size={22}
+                              className="text-neutral-600"
+                              aria-hidden="true"
+                            />
+                            <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-neutral-500">
+                              Volume
+                            </span>
+                            <span className="font-mono text-2xl font-bold leading-none text-neutral-200">
+                              {num}
+                            </span>
+                          </div>
+                        )}
+                        {/* Lombada decorativa */}
+                        <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
+                        {isExtra && (
+                          <span className="absolute left-2 top-2 rounded bg-violet-600/70 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                            novo
                           </span>
                         )}
-                      </p>
-                      <p className="truncate text-[11px] text-neutral-400">
-                        {chapterRange(vol)}
-                      </p>
-                      <p className="text-[10px] text-neutral-600">
-                        {vol.chapters.length}{' '}
-                        {vol.chapters.length === 1 ? 'capítulo' : 'capítulos'}
-                      </p>
-                    </div>
-                  </button>
+                        {vol.id in covers && covers[vol.id] && (
+                          <span className="absolute bottom-2 left-2 rounded bg-emerald-600/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                            capa
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Rótulo do volume */}
+                      <div className="space-y-0.5 border-t border-neutral-800 px-2.5 py-2">
+                        <p className="truncate font-mono text-xs font-bold text-neutral-100">
+                          {vol.name}
+                          {vol.label && (
+                            <span className="ml-1 font-sans font-normal text-neutral-600">
+                              {vol.label}
+                            </span>
+                          )}
+                        </p>
+                        <p className="truncate text-[11px] text-neutral-400">
+                          {chapterRange(vol)}
+                        </p>
+                        <p className="text-[10px] text-neutral-600">
+                          {vol.chapters.length}{' '}
+                          {vol.chapters.length === 1 ? 'capítulo' : 'capítulos'}
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Alternador: ver páginas do 1º cap. + capa */}
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(vol)}
+                      aria-expanded={isOpen}
+                      disabled={vol.chapters.length === 0}
+                      className="flex items-center justify-center gap-1 border-t border-neutral-800 px-2.5 py-1.5 text-[10px] font-medium text-neutral-500 transition-colors hover:bg-neutral-800/40 hover:text-neutral-300 disabled:opacity-40"
+                    >
+                      <ChevronDown
+                        size={12}
+                        aria-hidden="true"
+                        className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                      />
+                      {isOpen ? 'ocultar páginas' : 'ver páginas / capa'}
+                    </button>
+
+                    {/* Painel expandido: preview + adicionar capa */}
+                    {isOpen && (
+                      <div className="space-y-2 border-t border-neutral-800 bg-neutral-950/40 px-2.5 py-2.5">
+                        <p className="text-[10px] leading-snug text-neutral-500">
+                          Primeiras páginas do 1º capítulo - confira se a capa já
+                          veio na imagem.
+                        </p>
+                        {(!prev || prev.status === 'loading') && (
+                          <div className="flex items-center gap-1.5 text-neutral-600">
+                            <Loader2
+                              size={12}
+                              className="animate-spin"
+                              aria-hidden="true"
+                            />
+                            <span className="text-[10px]">Carregando preview…</span>
+                          </div>
+                        )}
+                        {prev?.status === 'loaded' && prev.images.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {prev.images.map((img, i) => (
+                              <img
+                                key={i}
+                                src={img}
+                                alt={`Pág. ${i + 1} do 1º capítulo`}
+                                className="aspect-[2/3] h-16 w-auto rounded object-cover"
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {prev?.status === 'loaded' && prev.images.length === 0 && (
+                          <p className="text-[10px] italic text-neutral-700">
+                            sem páginas
+                          </p>
+                        )}
+                        {prev?.status === 'error' && (
+                          <p className="text-[10px] italic text-neutral-600">
+                            preview indisponível
+                          </p>
+                        )}
+
+                        {/* Ações de capa */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => pickCover(vol.id)}
+                            className="flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-800/60 px-2 py-1 text-[10px] text-neutral-300 transition-colors hover:bg-neutral-800"
+                          >
+                            <ImagePlus size={11} aria-hidden="true" />
+                            {cover ? 'Trocar capa' : 'Adicionar capa'}
+                          </button>
+                          {cover && (
+                            <button
+                              type="button"
+                              onClick={() => removeCover(vol.id)}
+                              className="text-[10px] text-neutral-600 transition-colors hover:text-neutral-400"
+                            >
+                              Remover
+                            </button>
+                          )}
+                        </div>
+                        {coverErr && (
+                          <p className="text-[10px] leading-tight text-red-400">
+                            {coverErr}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>

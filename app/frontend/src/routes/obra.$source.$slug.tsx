@@ -24,6 +24,7 @@ import { VolumeBuilder } from '~/components/VolumeBuilder'
 import { useSessionContext } from '~/context/session'
 import { useAsync } from '~/hooks/useAsync'
 import { useIncremental } from '~/hooks/useIncremental'
+import { setPendingDownload } from '~/lib/pendingDownload'
 import { thumbSrc } from '~/utils/img'
 
 export const Route = createFileRoute('/obra/$source/$slug')({
@@ -201,8 +202,18 @@ function ObraPage() {
     }
   }
 
-  function handleVolumeDownload(volumes: VolumeInput[], allChapters: Chapter[]) {
-    void submitDownload(allChapters, volumes)
+  // Modo volumes: não baixa direto. Leva a seleção para a tela de downloads,
+  // onde o usuário escolhe baixar só um volume ou todos.
+  function handleVolumeDownload(volumes: VolumeInput[]) {
+    if (!data || volumes.length === 0) return
+    setPendingDownload({
+      source,
+      slug,
+      title: titleOverride ?? data.manga.title,
+      order,
+      volumes,
+    })
+    navigate({ to: '/downloads' })
   }
 
   // ── Estados de carregamento / erro ────────────────────────────────────────────

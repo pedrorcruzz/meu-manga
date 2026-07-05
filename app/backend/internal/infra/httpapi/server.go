@@ -39,6 +39,8 @@ type FileStore interface {
 	ListPages(manga, volume, chapter string) ([]string, error)
 	ReadPage(manga, volume, chapter, name string) ([]byte, error)
 	DeletePage(manga, volume, chapter, name string) error
+	// PageCount conta as páginas no disco sem criar a pasta (para verificação).
+	PageCount(manga, volume, chapter string) int
 }
 
 // Server exposes the REST + SSE API.
@@ -68,6 +70,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/downloads/{id}", s.getJob)
 	s.mux.HandleFunc("DELETE /api/downloads/{id}", s.cancelJob)
 	s.mux.HandleFunc("POST /api/downloads/{id}/retry", s.retryJob)
+	s.mux.HandleFunc("GET /api/downloads/{id}/verify", s.verifyJob)
 	s.mux.HandleFunc("POST /api/downloads/{id}/remove", s.removeJob)
 	s.mux.HandleFunc("GET /api/settings", s.getSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.putSettings)
@@ -318,14 +321,50 @@ func (s *Server) clearHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
 }
 
-// retryJob re-enfileira apenas os capítulos que faltaram de um job.
+// retryJob re-enfileira os capítulos que faltaram de um job. Filtros opcionais
+// via query: ?volume=<nome> refaz só um volume; ?chapter=<id> refaz só um
+// capítulo; ?force=1 inclui capítulos já concluídos (para re-baixar arquivos que
+// sumiram da pasta). Sem filtro, refaz todos os não-concluídos.
 func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
-	id, err := s.deps.Downloads.Retry(r.PathValue("id"))
+	q := r.URL.Query()
+	filter := usecase.RetryFilter{
+		ByVolume:         q.Has("volume"),
+		Volume:           q.Get("volume"),
+		ChapterID:        q.Get("chapter"),
+		IncludeCompleted: q.Get("force") == "1",
+	}
+	id, err := s.deps.Downloads.Retry(r.PathValue("id"), filter)
 	if err != nil {
 		writeUseErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": id})
+}
+
+// verifyJob confere, na PASTA REAL escolhida pelo usuário, quantas páginas cada
+// capítulo tem de fato. O histórico (SQLite) pode dizer "baixado", mas os
+// arquivos podem ter sido movidos/apagados (ex.: transferidos para um SSD
+// externo) — aqui devolvemos a verdade do disco para a UI destacar a diferença.
+func (s *Server) verifyJob(w http.ResponseWriter, r *http.Request) {
+	job, err := s.deps.Downloads.Get(r.PathValue("id"))
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	type taskDisk struct {
+		ChapterID string `json:"chapterId"`
+		Pages     int    `json:"pages"`
+		OnDisk    bool   `json:"onDisk"`
+	}
+	tasks := make([]taskDisk, 0, len(job.Tasks))
+	for _, t := range job.Tasks {
+		n := s.deps.Files.PageCount(job.Title, t.Volume, "Cap "+t.Chapter.Number)
+		tasks = append(tasks, taskDisk{ChapterID: t.Chapter.ID, Pages: n, OnDisk: n > 0})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"root":  s.deps.Settings.DownloadDir(),
+		"tasks": tasks,
+	})
 }
 
 // removeJob apaga um job do histórico (cancela antes, se estiver rodando).

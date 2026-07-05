@@ -2,7 +2,7 @@
 // incomum na rede"). É DIFERENTE do Cloudflare: não há desafio a resolver, só
 // esperar até o horário de liberação. Renderizado em __root.tsx.
 
-import { Clock, TriangleAlert } from 'lucide-react'
+import { Clock, Hourglass, TriangleAlert } from 'lucide-react'
 import { useSessionContext } from '~/context/session'
 
 // formatUntil transforma o ISO de liberação num relógio local legível.
@@ -45,10 +45,19 @@ export function BlockBanner() {
               <span className="text-rose-300/70">({until} no seu horário)</span>
             )}
           </p>
+          <p className="flex items-center gap-1.5 rounded-lg border border-rose-800/50 bg-rose-900/30 px-2.5 py-1.5 text-sm text-rose-100">
+            <Hourglass size={13} className="shrink-0" aria-hidden="true" />
+            <span>
+              <span className="font-semibold">
+                Seus downloads não pararam - estão aguardando.
+              </span>{' '}
+              O sistema retoma sozinho a partir do horário acima, de onde parou.
+              Não precisa fazer nada.
+            </span>
+          </p>
           <p className="pt-0.5 text-xs text-rose-300/60">
-            Dica: baixe menos capítulos de uma vez e mais espaçado para evitar
-            que isto se repita. Seus downloads já concluídos estão salvos - nada
-            foi perdido.
+            Dica: baixar menos volumes de uma vez ajuda a evitar que se repita.
+            Seus downloads já concluídos estão salvos - nada foi perdido.
           </p>
         </div>
       </div>

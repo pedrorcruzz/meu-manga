@@ -1048,8 +1048,10 @@ export function VolumeBuilder({
       {pending && (
         <VolumeSelectModal
           title={pending.title}
+          source={source}
           volumes={pending.volumes}
           leftoverChapters={pending.leftover}
+          previewCache={previewCacheRef}
           onConfirm={applyPending}
           onClose={() => setPending(null)}
         />

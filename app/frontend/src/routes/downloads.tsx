@@ -3,15 +3,24 @@ import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
+  BookOpen,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   Clock,
+  Download,
   Eye,
+  FileWarning,
   FolderOpen,
+  FolderSearch,
+  HardDrive,
+  Hourglass,
+  Layers,
   Loader2,
   RotateCcw,
+  RotateCw,
   Trash2,
+  Turtle,
   X,
   XCircle,
 } from 'lucide-react'
@@ -19,13 +28,24 @@ import {
   api,
   NoSessionError,
   type ChapterTask,
+  type DownloadRequest,
   type JobStatus,
   type JobSummary,
+  type VolumeInput,
 } from '~/api/client'
 import { useDownloadEvents } from '~/api/events'
+import { ConfirmDialog } from '~/components/ConfirmDialog'
 import { PageGallery } from '~/components/PageGallery'
 import { useSessionContext } from '~/context/session'
 import { useAsync } from '~/hooks/useAsync'
+import {
+  takePendingDownload,
+  type PendingDownload,
+} from '~/lib/pendingDownload'
+
+/** Opções de retry: sem nada = tudo que falta; volume/capítulo restringe.
+ *  force = re-baixa mesmo já concluído (arquivos sumiram da pasta). */
+type RetryOpts = { volume?: string; chapterId?: string; force?: boolean }
 
 // Progresso live de páginas: jobId → chapterNumber → {page, totalPages}
 type ChapterProgress = { page: number; totalPages: number }
@@ -42,6 +62,23 @@ function DownloadsPage() {
   const [listTick, setListTick] = useState(0)
   const [progressMap, setProgressMap] = useState<LiveProgress>({})
   const [filter, setFilter] = useState<FilterMode>('all')
+  // Popup de confirmação da própria interface (substitui window.confirm).
+  const [confirmState, setConfirmState] = useState<{
+    title: string
+    message: React.ReactNode
+    confirmLabel: string
+    onConfirm: () => void
+  } | null>(null)
+
+  // Seleção de volumes vinda da obra, aguardando o usuário escolher o que baixar.
+  const [pending, setPending] = useState<PendingDownload | null>(null)
+  const [staging, setStaging] = useState(false)
+
+  // Consome a seleção pendente uma vez, ao montar a tela.
+  useEffect(() => {
+    const p = takePendingDownload()
+    if (p && p.volumes.length > 0) setPending(p)
+  }, [])
 
   const { data, error, rawError } = useAsync(() => api.listJobs(), [listTick])
 
@@ -80,10 +117,11 @@ function DownloadsPage() {
     setListTick((t) => t + 1)
   }
 
-  // Refaz só os capítulos que faltaram (novo job). Não perde o que já baixou.
-  async function retry(id: string) {
+  // Refaz capítulos que faltaram (novo job). Não perde o que já baixou.
+  // Sem opts = tudo que faltou; opts.volume = só um volume; opts.chapterId = 1 cap.
+  async function retry(id: string, opts?: RetryOpts) {
     try {
-      await api.retryJob(id)
+      await api.retryJob(id, opts)
     } catch (err) {
       if (err instanceof NoSessionError) refreshSession()
     }
@@ -91,19 +129,27 @@ function DownloadsPage() {
   }
 
   // Remove do histórico. Os arquivos já salvos no disco não são apagados.
-  async function remove(id: string) {
-    const ok = window.confirm(
-      'Remover este download do histórico?\n\n' +
-        'Os capítulos já baixados no disco NÃO são apagados - isto só limpa a ' +
-        'entrada aqui da lista.',
-    )
-    if (!ok) return
-    try {
-      await api.removeJob(id)
-    } catch {
-      // ignora: a lista é atualizada a seguir de qualquer forma
-    }
-    setListTick((t) => t + 1)
+  function remove(id: string) {
+    setConfirmState({
+      title: 'Remover do histórico?',
+      message: (
+        <>
+          Os capítulos já baixados no disco{' '}
+          <span className="font-semibold text-neutral-200">NÃO</span> são
+          apagados - isto só limpa a entrada aqui da lista.
+        </>
+      ),
+      confirmLabel: 'Remover',
+      onConfirm: async () => {
+        setConfirmState(null)
+        try {
+          await api.removeJob(id)
+        } catch {
+          // ignora: a lista é atualizada a seguir de qualquer forma
+        }
+        setListTick((t) => t + 1)
+      },
+    })
   }
 
   const failedJobs = list.filter((j) => j.status === 'failed')
@@ -119,20 +165,58 @@ function DownloadsPage() {
   const finishedCount = list.length - activeCount
 
   // Limpa de uma vez tudo que já finalizou. Os arquivos no disco não são tocados.
-  async function clearHistory() {
-    const ok = window.confirm(
-      'Limpar o histórico de downloads finalizados?\n\n' +
-        'Isto remove as entradas concluídas, falhas e canceladas da lista. Os ' +
-        'downloads em andamento são mantidos e os arquivos já baixados NÃO são ' +
-        'apagados.',
-    )
-    if (!ok) return
-    try {
-      await api.clearHistory()
-    } catch {
-      // a lista é atualizada a seguir de qualquer forma
+  function clearHistory() {
+    setConfirmState({
+      title: 'Limpar histórico?',
+      message: (
+        <>
+          Remove as entradas concluídas, falhas e canceladas da lista. Os
+          downloads em andamento são mantidos e os arquivos já baixados no disco{' '}
+          <span className="font-semibold text-neutral-200">NÃO</span> são
+          apagados.
+        </>
+      ),
+      confirmLabel: 'Limpar',
+      onConfirm: async () => {
+        setConfirmState(null)
+        try {
+          await api.clearHistory()
+        } catch {
+          // a lista é atualizada a seguir de qualquer forma
+        }
+        setListTick((t) => t + 1)
+      },
+    })
+  }
+
+  // Inicia o download dos volumes escolhidos. Um único job (sequencial) por
+  // clique - baixar "todos" NÃO dispara vários jobs em paralelo, para não ser
+  // agressivo com o site e evitar o bloqueio por "atividade incomum".
+  async function startVolumes(vols: VolumeInput[]) {
+    if (!pending || vols.length === 0 || staging) return
+    setStaging(true)
+    const body: DownloadRequest = {
+      source: pending.source,
+      slug: pending.slug,
+      title: pending.title,
+      order: pending.order,
+      chapters: vols.flatMap((v) => v.chapters),
+      volumes: vols,
     }
-    setListTick((t) => t + 1)
+    try {
+      await api.createJob(body)
+      const sent = new Set(vols.map((v) => v.name))
+      setPending((prev) => {
+        if (!prev) return prev
+        const left = prev.volumes.filter((v) => !sent.has(v.name))
+        return left.length > 0 ? { ...prev, volumes: left } : null
+      })
+    } catch (err) {
+      if (err instanceof NoSessionError) refreshSession()
+    } finally {
+      setStaging(false)
+      setListTick((t) => t + 1)
+    }
   }
 
   const filteredList = list.filter((job) => {
@@ -157,6 +241,17 @@ function DownloadsPage() {
         <ArrowLeft size={15} aria-hidden="true" />
         Voltar
       </Link>
+
+      {/* Seleção de volumes recém-montados: escolher o que baixar */}
+      {pending && pending.volumes.length > 0 && (
+        <PendingVolumesPanel
+          pending={pending}
+          busy={staging}
+          onDownloadVolume={(v) => void startVolumes([v])}
+          onDownloadAll={() => void startVolumes(pending.volumes)}
+          onDiscard={() => setPending(null)}
+        />
+      )}
 
       {/* Pasta de downloads */}
       <DownloadFolderSection />
@@ -185,6 +280,9 @@ function DownloadsPage() {
             canClear={finishedCount > 0}
             onClear={() => void clearHistory()}
           />
+
+          {/* Por que demora: ritmo calmo para não tomar bloqueio */}
+          {activeCount > 0 && <PaceNote />}
 
           {/* Aviso: downloads incompletos que dá para refazer sem perder nada */}
           {incompleteJobs.length > 0 && (
@@ -215,13 +313,24 @@ function DownloadsPage() {
                   jobProgress={progressMap[job.jobId] ?? {}}
                   listTick={listTick}
                   onCancel={() => void cancel(job.jobId)}
-                  onRetry={() => void retry(job.jobId)}
-                  onRemove={() => void remove(job.jobId)}
+                  onRetry={(opts) => void retry(job.jobId, opts)}
+                  onRemove={() => remove(job.jobId)}
                 />
               ))
             )}
           </div>
         </div>
+      )}
+
+      {/* Popup de confirmação da nossa interface (sem alert do browser) */}
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          onConfirm={confirmState.onConfirm}
+          onCancel={() => setConfirmState(null)}
+        />
       )}
     </div>
   )
@@ -241,6 +350,174 @@ function EmptyState() {
           Busque um mangá e escolha capítulos para começar.
         </p>
       </div>
+    </div>
+  )
+}
+
+// ── Seleção de volumes a baixar (vinda da obra) ───────────────────────────────
+
+/** Faixa "Cap. X - Y" a partir de capítulos com campo `number`. */
+function numberRange(chs: { number: string }[]): string {
+  if (chs.length === 0) return '-'
+  const nums = chs.map((c) => c.number).sort((a, b) => parseFloat(a) - parseFloat(b))
+  const first = nums[0]
+  const last = nums[nums.length - 1]
+  return first === last ? `Cap. ${first}` : `Cap. ${first} - ${last}`
+}
+
+function PendingVolumesPanel({
+  pending,
+  busy,
+  onDownloadVolume,
+  onDownloadAll,
+  onDiscard,
+}: {
+  pending: PendingDownload
+  busy: boolean
+  onDownloadVolume: (v: VolumeInput) => void
+  onDownloadAll: () => void
+  onDiscard: () => void
+}) {
+  const totalChapters = pending.volumes.reduce(
+    (s, v) => s + v.chapters.length,
+    0,
+  )
+  return (
+    <div className="space-y-3 rounded-xl border border-violet-800/40 bg-violet-950/20 p-4">
+      {/* Cabeçalho */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Layers size={16} className="text-violet-300" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-neutral-100">
+            Volumes prontos para baixar
+          </p>
+          <p className="truncate text-xs text-neutral-400">
+            {pending.title} · {pending.volumes.length}{' '}
+            {pending.volumes.length === 1 ? 'volume' : 'volumes'} ·{' '}
+            {totalChapters} cap.
+          </p>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onDownloadAll}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? (
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Download size={14} aria-hidden="true" />
+            )}
+            Baixar todos
+          </button>
+          <button
+            type="button"
+            onClick={onDiscard}
+            disabled={busy}
+            className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300 transition-colors hover:bg-neutral-800 disabled:opacity-50"
+          >
+            Descartar
+          </button>
+        </div>
+      </div>
+
+      {/* Nota de ritmo (anti-bloqueio) */}
+      <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-violet-200/60">
+        <AlertTriangle
+          size={12}
+          className="mt-0.5 shrink-0"
+          aria-hidden="true"
+        />
+        Baixamos com calma - um capítulo por vez, com pausas - para não disparar
+        o bloqueio do site por "atividade incomum". Baixe só um volume ou todos;
+        o que você não baixar agora fica aqui.
+      </p>
+
+      {/* Grade de volumes */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        {pending.volumes.map((v) => (
+          <div
+            key={v.name}
+            className="flex flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/60"
+          >
+            <div
+              className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden ${
+                v.coverImage
+                  ? ''
+                  : 'bg-gradient-to-br from-neutral-800 to-neutral-950'
+              }`}
+            >
+              {v.coverImage ? (
+                <img
+                  src={v.coverImage}
+                  alt={`Capa de ${v.name}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-1.5 px-2 text-center">
+                  <BookOpen
+                    size={20}
+                    className="text-neutral-600"
+                    aria-hidden="true"
+                  />
+                  <span className="font-mono text-sm font-bold text-neutral-300">
+                    {v.name}
+                  </span>
+                </div>
+              )}
+              <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
+            </div>
+            <div className="space-y-0.5 border-t border-neutral-800 px-2.5 py-2">
+              <p className="truncate font-mono text-xs font-bold text-neutral-100">
+                {v.name}
+              </p>
+              <p className="truncate text-[11px] text-neutral-400">
+                {numberRange(v.chapters)}
+              </p>
+              <p className="text-[10px] text-neutral-600">
+                {v.chapters.length}{' '}
+                {v.chapters.length === 1 ? 'capítulo' : 'capítulos'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onDownloadVolume(v)}
+              disabled={busy}
+              className="flex items-center justify-center gap-1.5 border-t border-neutral-800 bg-neutral-800/40 px-2.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download size={12} aria-hidden="true" />
+              Baixar
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Aviso de ritmo calmo (por que demora) ─────────────────────────────────────
+
+function PaceNote() {
+  return (
+    <div className="flex items-start gap-2.5 rounded-xl border border-sky-900/40 bg-sky-950/20 p-3">
+      <Turtle
+        size={14}
+        className="mt-0.5 shrink-0 text-sky-400"
+        aria-hidden="true"
+      />
+      <p className="text-xs leading-relaxed text-sky-200/70">
+        <span className="font-semibold text-sky-200">
+          Baixando com calma, de propósito.
+        </span>{' '}
+        Vamos um capítulo por vez, com pausas, para não disparar o bloqueio do
+        site ("atividade incomum na rede"). Pode demorar mais que o normal, mas
+        assim é bem mais seguro - e se o site bloquear mesmo assim, o download{' '}
+        <span className="font-semibold text-sky-200">
+          espera e retoma sozinho
+        </span>{' '}
+        de onde parou, sem perder nada.
+      </p>
     </div>
   )
 }
@@ -435,8 +712,17 @@ function CaptchaJobAlert({
             Captcha do leitor - {title}
           </p>
           <p className="text-xs leading-relaxed text-amber-200/70">
-            O leitor de mangá tem seu próprio anti-bot. Abra o capítulo no
-            Navegador, resolva o desafio e tente baixar de novo.
+            O leitor de mangá tem seu próprio anti-bot. Para resolver, abra{' '}
+            <span className="font-semibold text-amber-200">
+              qualquer capítulo de qualquer mangá
+            </span>{' '}
+            no Navegador (pode ser um dos links abaixo), passe pelo captcha e{' '}
+            <span className="font-semibold text-amber-200">volte aqui</span>.
+            Depois é só usar{' '}
+            <span className="font-semibold text-amber-200">
+              Refazer o que faltou
+            </span>{' '}
+            no card - ele repega todos os capítulos que deram erro.
           </p>
         </div>
       </div>
@@ -547,8 +833,49 @@ interface JobCardProps {
   jobProgress: Record<string, ChapterProgress>
   listTick: number
   onCancel: () => void
-  onRetry: () => void
+  onRetry: (opts?: RetryOpts) => void
   onRemove: () => void
+}
+
+/** Grupo de capítulos de um mesmo volume dentro de um job. */
+interface VolumeGroup {
+  /** Nome do volume ("" no modo simples/sem volume). */
+  volume: string
+  tasks: ChapterTask[]
+  /** Índice de cada task no array original (para a galeria de páginas). */
+  indices: number[]
+  /** Capítulos não concluídos neste volume (fila/falho/cancelado). */
+  missing: number
+}
+
+/** Agrupa as tasks por volume preservando a ordem de aparição. */
+function groupByVolume(tasks: ChapterTask[]): VolumeGroup[] {
+  const groups: VolumeGroup[] = []
+  const byName = new Map<string, VolumeGroup>()
+  tasks.forEach((task, idx) => {
+    const vol = task.volume ?? ''
+    let g = byName.get(vol)
+    if (!g) {
+      g = { volume: vol, tasks: [], indices: [], missing: 0 }
+      byName.set(vol, g)
+      groups.push(g)
+    }
+    g.tasks.push(task)
+    g.indices.push(idx)
+    if (task.status !== 'completed') g.missing++
+  })
+  return groups
+}
+
+/** Faixa "Cap. X - Y" de uma lista de tasks. */
+function taskRange(tasks: ChapterTask[]): string {
+  if (tasks.length === 0) return '-'
+  const nums = tasks
+    .map((t) => t.chapter.number)
+    .sort((a, b) => parseFloat(a) - parseFloat(b))
+  const first = nums[0]
+  const last = nums[nums.length - 1]
+  return first === last ? `Cap. ${first}` : `Cap. ${first} - ${last}`
 }
 
 function JobCard({
@@ -560,6 +887,7 @@ function JobCard({
   onRemove,
 }: JobCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const { block } = useSessionContext()
 
   const { data: detail } = useAsync(
     () => api.getJob(job.jobId),
@@ -573,6 +901,44 @@ function JobCard({
   const active = job.status === 'running' || job.status === 'queued'
   const missing = job.totalChapters - job.completedChapters
   const canRetry = !active && missing > 0
+  // Bloqueio do site ativo + job rodando = está pausado esperando a liberação.
+  const waiting = !!block?.active && job.status === 'running'
+  const blockUntil = block?.rawTime || ''
+
+  // Verificação na pasta real: chapterId → {pages, onDisk}. null = ainda não conferido.
+  const [diskMap, setDiskMap] = useState<Record<
+    string,
+    { pages: number; onDisk: boolean }
+  > | null>(null)
+  const [verifying, setVerifying] = useState(false)
+  const [diskRoot, setDiskRoot] = useState('')
+
+  async function verifyDisk() {
+    setVerifying(true)
+    try {
+      const res = await api.verifyJob(job.jobId)
+      const map: Record<string, { pages: number; onDisk: boolean }> = {}
+      for (const t of res.tasks)
+        map[t.chapterId] = { pages: t.pages, onDisk: t.onDisk }
+      setDiskMap(map)
+      setDiskRoot(res.root)
+    } catch {
+      // silencioso: sem verificação, a UI só não mostra os selos de disco
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  // Nº de capítulos concluídos no histórico que sumiram da pasta real.
+  const missingOnDisk = detail
+    ? detail.tasks.filter(
+        (t) =>
+          t.status === 'completed' &&
+          diskMap != null &&
+          diskMap[t.chapter.id] &&
+          !diskMap[t.chapter.id].onDisk,
+      ).length
+    : 0
 
   const cardBorderClass =
     job.status === 'running'
@@ -609,7 +975,7 @@ function JobCard({
           <p className="truncate text-sm font-medium leading-snug text-neutral-100">
             {job.title}
           </p>
-          <div className="mt-0.5 flex items-center gap-1.5">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             <span
               className={`font-mono text-[11px] ${STATUS_COLOR[job.status] ?? 'text-neutral-500'}`}
             >
@@ -624,6 +990,13 @@ function JobCard({
             <span className="font-mono text-[11px] text-neutral-500">
               {job.completedChapters}/{job.totalChapters} cap.
             </span>
+            {waiting && (
+              <span className="flex items-center gap-1 rounded border border-rose-900/60 bg-rose-950/40 px-1.5 py-0.5 font-mono text-[10px] text-rose-300">
+                <Hourglass size={9} aria-hidden="true" />
+                aguardando liberação{blockUntil ? ` até ${blockUntil}` : ''} -
+                retoma sozinho
+              </span>
+            )}
             {canRetry && (
               <>
                 <span
@@ -681,7 +1054,7 @@ function JobCard({
               {canRetry && (
                 <button
                   type="button"
-                  onClick={onRetry}
+                  onClick={() => onRetry()}
                   aria-label={`Refazer os capítulos que faltaram de ${job.title}`}
                   className="flex items-center gap-1 rounded border border-amber-800/60 px-2 py-1 font-mono text-[11px] text-amber-300 transition-colors hover:bg-amber-950/40"
                 >
@@ -722,25 +1095,166 @@ function JobCard({
         </div>
       </div>
 
-      {/* Área expandida: capítulos */}
+      {/* Área expandida: capítulos, agrupados por volume */}
       {expanded && (
         <div
           id={`job-tasks-${job.jobId}`}
           className="border-t border-neutral-800/60 px-4 py-3"
         >
+          {/* Conferir na pasta real (o histórico pode dizer baixado à toa) */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void verifyDisk()}
+              disabled={verifying}
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-700 px-2.5 py-1 font-mono text-[11px] text-neutral-300 transition-colors hover:bg-neutral-800 disabled:opacity-50"
+              title="Confere se os arquivos estão mesmo na pasta de download"
+            >
+              {verifying ? (
+                <Loader2 size={11} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <FolderSearch size={11} aria-hidden="true" />
+              )}
+              {verifying ? 'Conferindo…' : 'Conferir na pasta'}
+            </button>
+            {diskMap != null &&
+              (missingOnDisk > 0 ? (
+                <span className="flex items-center gap-1 font-mono text-[11px] text-red-400">
+                  <FileWarning size={11} aria-hidden="true" />
+                  {missingOnDisk} capítulo{missingOnDisk !== 1 ? 's' : ''} fora da
+                  pasta
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 font-mono text-[11px] text-emerald-400/90">
+                  <HardDrive size={11} aria-hidden="true" />
+                  tudo confere na pasta
+                </span>
+              ))}
+            {diskRoot && (
+              <span
+                className="max-w-full truncate font-mono text-[10px] text-neutral-600"
+                title={diskRoot}
+              >
+                {diskRoot}
+              </span>
+            )}
+          </div>
           {detail ? (
             detail.tasks.length > 0 ? (
-              <div className="space-y-2">
-                {detail.tasks.map((task, idx) => (
-                  <TaskRow
-                    key={task.chapter.id}
-                    task={task}
-                    taskIndex={idx}
-                    jobId={job.jobId}
-                    liveProgress={jobProgress[task.chapter.number]}
-                  />
-                ))}
-              </div>
+              (() => {
+                const groups = groupByVolume(detail.tasks)
+                // Só mostra cabeçalhos de volume quando há volumes de verdade.
+                const hasVolumes = groups.some((g) => g.volume !== '')
+                if (!hasVolumes) {
+                  return (
+                    <div className="space-y-2">
+                      {detail.tasks.map((task, idx) => (
+                        <TaskRow
+                          key={task.chapter.id}
+                          task={task}
+                          taskIndex={idx}
+                          jobId={job.jobId}
+                          liveProgress={jobProgress[task.chapter.number]}
+                          onRetryChapter={
+                            !active && task.status !== 'completed'
+                              ? () => onRetry({ chapterId: task.chapter.id })
+                              : undefined
+                          }
+                          diskInfo={diskMap?.[task.chapter.id]}
+                          onRedownload={
+                            !active
+                              ? () =>
+                                  onRetry({
+                                    chapterId: task.chapter.id,
+                                    force: true,
+                                  })
+                              : undefined
+                          }
+                        />
+                      ))}
+                    </div>
+                  )
+                }
+                return (
+                  <div className="space-y-3">
+                    {groups.map((g) => (
+                      <div
+                        key={g.volume || '__none__'}
+                        className="rounded-lg border border-neutral-800/70 bg-neutral-950/30"
+                      >
+                        {/* Cabeçalho do volume */}
+                        <div className="flex items-center gap-2 border-b border-neutral-800/60 px-3 py-2">
+                          <Layers
+                            size={12}
+                            className="shrink-0 text-neutral-500"
+                            aria-hidden="true"
+                          />
+                          <span className="font-mono text-xs font-bold text-neutral-200">
+                            {g.volume || 'Sem volume'}
+                          </span>
+                          <span className="font-mono text-[11px] text-neutral-600">
+                            {taskRange(g.tasks)}
+                          </span>
+                          <span
+                            className={`font-mono text-[11px] ${
+                              g.missing === 0
+                                ? 'text-emerald-400/90'
+                                : 'text-neutral-400'
+                            }`}
+                          >
+                            · {g.tasks.length - g.missing}/{g.tasks.length}{' '}
+                            baixados
+                          </span>
+                          {g.missing > 0 && (
+                            <span className="font-mono text-[11px] text-amber-400/90">
+                              · faltam {g.missing}
+                            </span>
+                          )}
+                          {!active && g.missing > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => onRetry({ volume: g.volume })}
+                              aria-label={`Refazer o que faltou do volume ${g.volume || 'sem volume'}`}
+                              className="ml-auto flex items-center gap-1 rounded border border-amber-800/60 px-2 py-0.5 font-mono text-[10px] text-amber-300 transition-colors hover:bg-amber-950/40"
+                            >
+                              <RotateCcw size={10} aria-hidden="true" />
+                              Refazer volume
+                            </button>
+                          )}
+                        </div>
+                        {/* Capítulos do volume */}
+                        <div className="space-y-2 px-3 py-2.5">
+                          {g.tasks.map((task, i) => (
+                            <TaskRow
+                              key={task.chapter.id}
+                              task={task}
+                              taskIndex={g.indices[i]}
+                              jobId={job.jobId}
+                              liveProgress={jobProgress[task.chapter.number]}
+                              onRetryChapter={
+                                !active && task.status !== 'completed'
+                                  ? () =>
+                                      onRetry({ chapterId: task.chapter.id })
+                                  : undefined
+                              }
+                              diskInfo={diskMap?.[task.chapter.id]}
+                              onRedownload={
+                                !active
+                                  ? () =>
+                                      onRetry({
+                                        chapterId: task.chapter.id,
+                                        force: true,
+                                      })
+                                  : undefined
+                              }
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()
             ) : (
               <p className="py-2 font-mono text-xs text-neutral-600">
                 Sem capítulos registrados.
@@ -765,10 +1279,27 @@ interface TaskRowProps {
   taskIndex: number
   jobId: string
   liveProgress: ChapterProgress | undefined
+  /** Re-baixa só este capítulo. Ausente = sem ação (concluído ou job ativo). */
+  onRetryChapter?: () => void
+  /** Resultado da verificação em disco deste capítulo (se já conferido). */
+  diskInfo?: { pages: number; onDisk: boolean }
+  /** Re-baixa este capítulo mesmo já concluído (arquivos sumiram da pasta). */
+  onRedownload?: () => void
 }
 
-function TaskRow({ task, taskIndex, jobId, liveProgress }: TaskRowProps) {
+function TaskRow({
+  task,
+  taskIndex,
+  jobId,
+  liveProgress,
+  onRetryChapter,
+  diskInfo,
+  onRedownload,
+}: TaskRowProps) {
   const [showGallery, setShowGallery] = useState(false)
+  // Histórico diz concluído, mas os arquivos não estão na pasta real.
+  const missingOnDisk =
+    task.status === 'completed' && diskInfo !== undefined && !diskInfo.onDisk
 
   const page =
     task.status === 'running' ? (liveProgress?.page ?? task.page) : task.page
@@ -804,8 +1335,28 @@ function TaskRow({ task, taskIndex, jobId, liveProgress }: TaskRowProps) {
           </span>
         )}
 
-        {/* Botão de preview (completed) */}
-        {task.status === 'completed' && (
+        {/* Estado no disco (após "Conferir na pasta") */}
+        {task.status === 'completed' && diskInfo && diskInfo.onDisk && (
+          <span
+            className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-emerald-500/80"
+            title={`${diskInfo.pages} páginas na pasta`}
+          >
+            <HardDrive size={10} aria-hidden="true" />
+            {diskInfo.pages}p
+          </span>
+        )}
+        {missingOnDisk && (
+          <span
+            className="flex shrink-0 items-center gap-1 font-mono text-[10px] text-red-400"
+            title="O histórico diz baixado, mas os arquivos não estão na pasta (movidos ou apagados)"
+          >
+            <FileWarning size={10} aria-hidden="true" />
+            fora da pasta
+          </span>
+        )}
+
+        {/* Botão de preview (completed e presente no disco) */}
+        {task.status === 'completed' && !missingOnDisk && (
           <button
             type="button"
             onClick={() => setShowGallery(true)}
@@ -817,6 +1368,20 @@ function TaskRow({ task, taskIndex, jobId, liveProgress }: TaskRowProps) {
           </button>
         )}
 
+        {/* Re-baixar quando os arquivos sumiram da pasta */}
+        {missingOnDisk && onRedownload && (
+          <button
+            type="button"
+            onClick={onRedownload}
+            className="flex shrink-0 items-center gap-1 rounded border border-amber-800/60 px-1.5 py-0.5 font-mono text-[10px] text-amber-300 transition-colors hover:bg-amber-950/40"
+            aria-label={`Re-baixar o capítulo ${task.chapter.number} que sumiu da pasta`}
+            title="Re-baixar este capítulo para a pasta"
+          >
+            <RotateCw size={10} aria-hidden="true" />
+            re-baixar
+          </button>
+        )}
+
         {/* Erro resumido */}
         {task.status === 'failed' && task.error && (
           <span
@@ -825,6 +1390,20 @@ function TaskRow({ task, taskIndex, jobId, liveProgress }: TaskRowProps) {
           >
             {task.error}
           </span>
+        )}
+
+        {/* Reload: re-baixa só este capítulo (falho/fila/cancelado) */}
+        {onRetryChapter && (
+          <button
+            type="button"
+            onClick={onRetryChapter}
+            className="flex shrink-0 items-center gap-1 rounded border border-amber-800/60 px-1.5 py-0.5 font-mono text-[10px] text-amber-300 transition-colors hover:bg-amber-950/40"
+            aria-label={`Re-baixar o capítulo ${task.chapter.number}`}
+            title="Re-baixar este capítulo"
+          >
+            <RotateCw size={10} aria-hidden="true" />
+            re-baixar
+          </button>
         )}
       </div>
 

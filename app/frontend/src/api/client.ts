@@ -106,6 +106,8 @@ export interface JobSummary {
 
 export interface ChapterTask {
   chapter: Chapter
+  /** Nome do volume ao qual o capítulo pertence (vazio no modo simples). */
+  volume?: string
   status: JobStatus
   page: number
   totalPages: number
@@ -220,11 +222,35 @@ export const api = {
     }),
   cancelJob: (id: string) =>
     req<void>(`/downloads/${id}`, { method: 'DELETE' }),
-  /** Re-enfileira apenas os capítulos que faltaram de um job. */
-  retryJob: (id: string) =>
-    req<{ jobId: string }>(`/downloads/${encodeURIComponent(id)}/retry`, {
-      method: 'POST',
-    }),
+  /**
+   * Re-enfileira os capítulos que faltaram de um job. Sem `opts`, refaz todos
+   * os não-concluídos. `opts.volume` refaz só um volume; `opts.chapterId` refaz
+   * só um capítulo; `opts.force` inclui capítulos já concluídos (para re-baixar
+   * arquivos que sumiram da pasta).
+   */
+  retryJob: (
+    id: string,
+    opts?: { volume?: string; chapterId?: string; force?: boolean },
+  ) => {
+    const q = new URLSearchParams()
+    if (opts?.volume !== undefined) q.set('volume', opts.volume)
+    if (opts?.chapterId) q.set('chapter', opts.chapterId)
+    if (opts?.force) q.set('force', '1')
+    const qs = q.toString()
+    return req<{ jobId: string }>(
+      `/downloads/${encodeURIComponent(id)}/retry${qs ? `?${qs}` : ''}`,
+      { method: 'POST' },
+    )
+  },
+  /**
+   * Confere na pasta real quantas páginas cada capítulo tem no disco. O
+   * histórico pode dizer "baixado" mas os arquivos podem ter sido movidos.
+   */
+  verifyJob: (id: string) =>
+    req<{
+      root: string
+      tasks: { chapterId: string; pages: number; onDisk: boolean }[]
+    }>(`/downloads/${encodeURIComponent(id)}/verify`),
   /** Remove um job do histórico (cancela antes, se estiver rodando). */
   removeJob: (id: string) =>
     req<void>(`/downloads/${encodeURIComponent(id)}/remove`, {

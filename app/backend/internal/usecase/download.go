@@ -54,6 +54,11 @@ type Downloader struct {
 	delay     func() time.Duration // espera entre capítulos (throttle)
 	retention time.Duration        // poda jobs finalizados mais velhos (0 = nunca)
 
+	// slot serializa o download de capítulos em TODO o app: um capítulo por vez,
+	// mesmo com vários jobs (baixar por volume, refazer etc.). É o que impede a
+	// rajada de requests que dispara o bloqueio por "atividade incomum".
+	slot chan struct{}
+
 	mu      sync.Mutex
 	jobs    map[string]*domain.Job
 	cancels map[string]context.CancelFunc
@@ -102,6 +107,7 @@ func NewDownloader(reg SourceRegistry, store PageSaver, bus *EventBus, opts ...O
 		bus:     bus,
 		now:     time.Now,
 		delay:   func() time.Duration { return 0 },
+		slot:    make(chan struct{}, 1), // 1 = um capítulo por vez em todo o app
 		jobs:    map[string]*domain.Job{},
 		cancels: map[string]context.CancelFunc{},
 	}
@@ -237,10 +243,25 @@ func (d *Downloader) Enqueue(req DownloadRequest) (string, error) {
 	return id, nil
 }
 
-// Retry re-enfileira apenas os capítulos ainda não concluídos de um job,
-// preservando a capa de volume quando o capítulo que a carregava também falhou.
+// RetryFilter restringe quais capítulos não-concluídos de um job serão
+// refeitos. Campos zerados = sem filtro (refaz tudo que falta).
+type RetryFilter struct {
+	// ByVolume liga o filtro por volume; Volume é o nome exato (pode ser "" no
+	// modo simples, por isso o bool separado para distinguir "sem filtro").
+	ByVolume bool
+	Volume   string
+	// ChapterID, quando não vazio, restringe a um único capítulo.
+	ChapterID string
+	// IncludeCompleted também refaz capítulos já concluídos (para re-baixar
+	// arquivos que sumiram da pasta). Sem ele, capítulos concluídos são pulados.
+	IncludeCompleted bool
+}
+
+// Retry re-enfileira os capítulos ainda não concluídos de um job (fila, falhos,
+// cancelados), preservando a capa de volume quando o capítulo que a carregava
+// também falhou. O filtro permite refazer só um volume ou só um capítulo.
 // Devolve o id do novo job.
-func (d *Downloader) Retry(id string) (string, error) {
+func (d *Downloader) Retry(id string, f RetryFilter) (string, error) {
 	job, err := d.Get(id)
 	if err != nil {
 		return "", err
@@ -248,7 +269,13 @@ func (d *Downloader) Retry(id string) (string, error) {
 	req := DownloadRequest{Source: job.Source, Slug: job.Slug, Title: job.Title}
 	volIdx := map[string]int{} // nome do volume → índice em req.Volumes
 	for _, t := range job.Tasks {
-		if t.Status == domain.StatusCompleted {
+		if t.Status == domain.StatusCompleted && !f.IncludeCompleted {
+			continue
+		}
+		if f.ByVolume && t.Volume != f.Volume {
+			continue
+		}
+		if f.ChapterID != "" && t.Chapter.ID != f.ChapterID {
 			continue
 		}
 		vi, ok := volIdx[t.Volume]
@@ -284,32 +311,75 @@ func (d *Downloader) Remove(id string) error {
 	return nil
 }
 
+// maxBlockWaits limita quantas vezes um job espera a liberação do site antes de
+// desistir e marcar falha. Evita um job eternamente preso se o bloqueio nunca sai.
+const maxBlockWaits = 12
+
 func (d *Downloader) run(ctx context.Context, src domain.Source, job *domain.Job) {
 	d.setJobStatus(job.ID, domain.StatusRunning)
 	failed := false
-	for i := range job.Tasks {
+	blockWaits := 0
+	// Backoff adaptativo: a cada bloqueio, o job passa a ir mais devagar entre
+	// capítulos, para não voltar a tripar o rate-limit do site logo em seguida.
+	var extraDelay time.Duration
+	for i := 0; i < len(job.Tasks); i++ {
 		if ctx.Err() != nil {
 			d.setTaskStatus(job.ID, i, domain.StatusCanceled, "")
 			d.persist(job.ID)
 			continue
 		}
-		// bloqueio temporário ativo: falha o restante rápido, sem martelar o site
+		// Site nos bloqueou? Em vez de falhar tudo, espera até a liberação que o
+		// próprio site anunciou e refaz ESTE capítulo. Assim "baixar todos" segue
+		// sozinho depois do bloqueio, sem perder o lote nem martelar o site.
 		if d.gate != nil {
 			if be := d.gate.Blocked(d.now()); be != nil {
-				failed = true
-				d.setTaskStatus(job.ID, i, domain.StatusFailed, be.Error())
+				if blockWaits >= maxBlockWaits {
+					failed = true
+					d.setTaskStatus(job.ID, i, domain.StatusFailed, be.Error())
+					d.persist(job.ID)
+					d.bus.Publish(domain.Event{Type: domain.EventError, JobID: job.ID,
+						ChapterNumber: job.Tasks[i].Chapter.Number, Message: be.Error()})
+					continue
+				}
+				blockWaits++
+				extraDelay += 15 * time.Second // vai mais devagar depois de apanhar
+				d.setTaskStatus(job.ID, i, domain.StatusQueued,
+					"bloqueio do site — aguardando liberação "+be.RawTime)
 				d.persist(job.ID)
 				d.bus.Publish(domain.Event{Type: domain.EventError, JobID: job.ID,
 					ChapterNumber: job.Tasks[i].Chapter.Number, Message: be.Error()})
+				if !d.sleepUntil(ctx, be.Until) {
+					d.setTaskStatus(job.ID, i, domain.StatusCanceled, "")
+					d.persist(job.ID)
+					continue
+				}
+				i-- // liberou: refaz a checagem/baixa deste mesmo capítulo
 				continue
 			}
 		}
 		if i > 0 {
-			d.throttle(ctx) // vai mais devagar entre capítulos
+			// pacing entre capítulos (fora do slot: não trava outros jobs).
+			// extraDelay cresce a cada bloqueio já sofrido (backoff adaptativo).
+			d.pause(ctx, d.delay()+extraDelay)
 		}
-		if err := d.runChapter(ctx, src, job, i); err != nil {
+		// Um capítulo por vez em todo o app: mesmo com vários jobs (por volume,
+		// refazer etc.), nunca baixamos dois capítulos ao mesmo tempo.
+		if !d.acquire(ctx) {
+			d.setTaskStatus(job.ID, i, domain.StatusCanceled, "")
+			d.persist(job.ID)
+			continue
+		}
+		err := d.runChapter(ctx, src, job, i)
+		d.release()
+		if err != nil {
 			if d.gate != nil {
 				d.gate.Record(err) // tripa a gate se for BlockedError
+			}
+			// Bloqueio no meio do capítulo: não é falha definitiva. Volta uma
+			// posição para a checagem da gate, que vai esperar a liberação e refazer.
+			if _, ok := domain.AsBlocked(err); ok {
+				i--
+				continue
 			}
 			failed = true
 			d.setTaskStatus(job.ID, i, domain.StatusFailed, err.Error())
@@ -334,9 +404,39 @@ func (d *Downloader) run(ctx context.Context, src domain.Source, job *domain.Job
 	d.bus.Publish(domain.Event{Type: domain.EventJobDone, JobID: job.ID, Status: final})
 }
 
-// throttle dorme d.delay() respeitando o cancelamento do contexto.
-func (d *Downloader) throttle(ctx context.Context) {
-	dur := d.delay()
+// acquire pega o slot global (um capítulo por vez). Devolve false se o contexto
+// for cancelado antes de conseguir - nesse caso NÃO se deve chamar release.
+func (d *Downloader) acquire(ctx context.Context) bool {
+	select {
+	case d.slot <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// release devolve o slot global para o próximo capítulo (de qualquer job).
+func (d *Downloader) release() { <-d.slot }
+
+// sleepUntil dorme até `until` respeitando o cancelamento do contexto. Devolve
+// true se chegou ao horário, ou false se o contexto foi cancelado antes.
+func (d *Downloader) sleepUntil(ctx context.Context, until time.Time) bool {
+	dur := until.Sub(d.now())
+	if dur <= 0 {
+		return true
+	}
+	t := time.NewTimer(dur)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// pause dorme dur respeitando o cancelamento do contexto (no-op se dur <= 0).
+func (d *Downloader) pause(ctx context.Context, dur time.Duration) {
 	if dur <= 0 {
 		return
 	}

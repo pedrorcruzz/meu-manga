@@ -36,20 +36,43 @@ func (s *Store) SetRoot(dir string) error {
 	return nil
 }
 
-// ChapterDir returns (and creates) the folder for a given work/volume/chapter.
-// Layout: <manga>/<manga> <volume>/<chapter>/. Com volume vazio, omite o nível
-// do volume: <manga>/<chapter>/.
-func (s *Store) ChapterDir(manga, volume, chapter string) (string, error) {
+// chapterPath computes the folder path for a work/volume/chapter WITHOUT
+// creating it (read-only). Layout: <manga>/<manga> <volume>/<chapter>/. Com
+// volume vazio, omite o nível do volume: <manga>/<chapter>/.
+func (s *Store) chapterPath(manga, volume, chapter string) string {
 	parts := []string{s.Root(), Sanitize(manga)}
 	if volume != "" {
 		parts = append(parts, Sanitize(manga+" "+volume))
 	}
 	parts = append(parts, Sanitize(chapter))
-	dir := filepath.Join(parts...)
+	return filepath.Join(parts...)
+}
+
+// ChapterDir returns (and creates) the folder for a given work/volume/chapter.
+func (s *Store) ChapterDir(manga, volume, chapter string) (string, error) {
+	dir := s.chapterPath(manga, volume, chapter)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
 	return dir, nil
+}
+
+// PageCount conta, SEM criar a pasta, quantas páginas (imagens) existem de fato
+// no disco para um capítulo. Devolve 0 se a pasta não existe — é o que permite
+// detectar que o histórico diz "baixado" mas os arquivos sumiram (ex.: movidos
+// para um SSD externo).
+func (s *Store) PageCount(manga, volume, chapter string) int {
+	entries, err := os.ReadDir(s.chapterPath(manga, volume, chapter))
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && isImageName(e.Name()) {
+			n++
+		}
+	}
+	return n
 }
 
 // SavePage writes one page image into the chapter folder.

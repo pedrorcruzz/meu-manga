@@ -34,7 +34,7 @@ func Load() Config {
 		UserAgent:        env("MM_USER_AGENT", defaultUA),
 		MaxWorkers:       2,
 		DataDir:          env("MM_DATA_DIR", filepath.Join(home, ".meumanga")),
-		ChapterDelay:     time.Duration(envInt("MM_CHAPTER_DELAY_MS", 3000)) * time.Millisecond,
+		ChapterDelay:     time.Duration(envInt("MM_CHAPTER_DELAY_MS", 5000)) * time.Millisecond,
 		HistoryRetention: time.Duration(envInt("MM_HISTORY_RETENTION_DAYS", 30)) * 24 * time.Hour,
 	}
 	return c
