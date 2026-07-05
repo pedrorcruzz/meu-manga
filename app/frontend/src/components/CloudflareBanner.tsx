@@ -44,7 +44,22 @@ export function CloudflareBanner() {
     <div className="border-b border-amber-800/60 bg-amber-950/40 px-4 py-3">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3">
         <p className="flex flex-1 items-center gap-2 text-sm text-amber-200">
-          {loading ? (
+          {awaiting ? (
+            <>
+              <Loader2
+                size={14}
+                className="shrink-0 animate-spin"
+                aria-hidden="true"
+              />
+              <span>
+                <span className="font-semibold">
+                  Detectando sua verificação…
+                </span>{' '}
+                se você já resolveu no Navegador, é só aguardar alguns segundos.
+                Nosso sistema capta sozinho, não precisa clicar de novo.
+              </span>
+            </>
+          ) : loading ? (
             <>
               <Loader2
                 size={14}
@@ -54,20 +69,6 @@ export function CloudflareBanner() {
               <span>
                 <span className="font-semibold">Verificando sua sessão…</span>{' '}
                 aguarde um instante.
-              </span>
-            </>
-          ) : awaiting ? (
-            <>
-              <Loader2
-                size={14}
-                className="shrink-0 animate-spin"
-                aria-hidden="true"
-              />
-              <span>
-                <span className="font-semibold">
-                  Aguardando você resolver no Navegador…
-                </span>{' '}
-                pode voltar aqui quando terminar, que a gente verifica sozinho.
               </span>
             </>
           ) : (
