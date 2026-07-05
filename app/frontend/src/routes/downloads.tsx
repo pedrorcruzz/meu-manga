@@ -434,9 +434,10 @@ function PendingVolumesPanel({
         o que você não baixar agora fica aqui.
       </p>
 
-      {/* Grade de volumes */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-        {pending.volumes.map((v) => (
+      {/* Grade de volumes (rolagem interna para não esticar a página) */}
+      <div className="max-h-[26rem] overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          {pending.volumes.map((v) => (
           <div
             key={v.name}
             className="flex flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/60"
@@ -490,7 +491,8 @@ function PendingVolumesPanel({
               Baixar
             </button>
           </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   )
