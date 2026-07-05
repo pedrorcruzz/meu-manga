@@ -14,7 +14,12 @@ import {
   Zap,
 } from 'lucide-react'
 import { api, type Chapter, type VolumeInput } from '~/api/client'
-import { VolumeCard, type Volume, type PreviewState } from './VolumeCard'
+import {
+  VolumeCard,
+  type Volume,
+  type PreviewState,
+  type ChapterPreview,
+} from './VolumeCard'
 import { VolumeSelectModal } from './VolumeSelectModal'
 import { FilterChip } from './FilterChip'
 import { HelpButton } from './HelpButton'
@@ -128,8 +133,8 @@ export function VolumeBuilder({
   const [jumpQuery, setJumpQuery] = useState('')
 
   // ── Preview state ────────────────────────────────────────────────────────────
-  /** Cache de imagens de preview, persistente entre gerações. Chave: `${chapter.id}:3`. */
-  const previewCacheRef = useRef<Map<string, string[]>>(new Map())
+  /** Cache de preview por capítulo, persistente entre gerações. Chave: `${chapter.id}:3`. */
+  const previewCacheRef = useRef<Map<string, ChapterPreview>>(new Map())
   /** Número da epoch de fetch atual - incrementado a cada geração para cancelar fetches obsoletos. */
   const fetchEpochRef = useRef(0)
   const [volumePreviews, setVolumePreviews] = useState<Record<string, PreviewState>>({})
@@ -218,6 +223,17 @@ export function VolumeBuilder({
 
   // ── Preview fetch (2 workers em paralelo, cache por chapter id) ─────────────
 
+  /** Busca (com cache por capítulo) o preview bruto de um capítulo. */
+  async function getChapterPreview(ch: Chapter): Promise<ChapterPreview> {
+    const key = `${ch.id}:3`
+    const cached = previewCacheRef.current.get(key)
+    if (cached) return cached
+    const res = await api.previewChapter(source, ch, 3)
+    const val: ChapterPreview = { images: res.images, tail: res.tail }
+    previewCacheRef.current.set(key, val)
+    return val
+  }
+
   function triggerPreviews(vols: Volume[]) {
     const epoch = ++fetchEpochRef.current
     setVolumePreviews({})
@@ -234,30 +250,29 @@ export function VolumeBuilder({
         if (idx >= tasks.length) return
 
         const vol = tasks[idx]
-        const ch = vol.chapters[0]
-        const key = `${ch.id}:3`
-
-        if (previewCacheRef.current.has(key)) {
-          if (fetchEpochRef.current === epoch) {
-            setVolumePreviews((prev) => ({
-              ...prev,
-              [vol.id]: { status: 'loaded', images: previewCacheRef.current.get(key)! },
-            }))
-          }
-          continue
-        }
+        const first = vol.chapters[0]
+        const last = vol.chapters[vol.chapters.length - 1]
 
         if (fetchEpochRef.current === epoch) {
           setVolumePreviews((prev) => ({ ...prev, [vol.id]: { status: 'loading' } }))
         }
 
         try {
-          const res = await api.previewChapter(source, ch, 3)
-          previewCacheRef.current.set(key, res.images)
+          // head = 3 primeiras do 1º cap.; tail = 3 últimas do último cap.
+          const [firstPrev, lastPrev] = await Promise.all([
+            getChapterPreview(first),
+            first.id === last.id
+              ? Promise.resolve(null)
+              : getChapterPreview(last),
+          ])
           if (fetchEpochRef.current === epoch) {
             setVolumePreviews((prev) => ({
               ...prev,
-              [vol.id]: { status: 'loaded', images: res.images },
+              [vol.id]: {
+                status: 'loaded',
+                head: firstPrev.images,
+                tail: (lastPrev ?? firstPrev).tail,
+              },
             }))
           }
         } catch {

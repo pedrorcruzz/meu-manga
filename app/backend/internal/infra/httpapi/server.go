@@ -422,15 +422,18 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing source")
 		return
 	}
-	imgs, err := s.deps.Previewer.Preview(r.Context(), req.Source, req.Chapter, req.Count)
+	head, tail, err := s.deps.Previewer.Preview(r.Context(), req.Source, req.Chapter, req.Count)
 	if err != nil {
 		writeUseErr(w, err)
 		return
 	}
-	if imgs == nil {
-		imgs = []string{}
+	if head == nil {
+		head = []string{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"images": imgs})
+	if tail == nil {
+		tail = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"images": head, "tail": tail})
 }
 
 func writeUseErr(w http.ResponseWriter, err error) {

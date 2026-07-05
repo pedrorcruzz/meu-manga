@@ -3,12 +3,23 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import { ArrowRight, ImagePlus, Loader2, Trash2, X } from 'lucide-react'
 import type { Chapter } from '~/api/client'
+import { PreviewLightbox } from './PreviewLightbox'
 
-/** Estado de pré-visualização das primeiras páginas do 1º capítulo de um volume. */
+/**
+ * Pré-visualização de um volume:
+ * - `head` = 3 primeiras páginas do 1º capítulo;
+ * - `tail` = 3 últimas páginas do último capítulo (checar se veio a capa do próximo).
+ */
 export type PreviewState =
   | { status: 'loading' }
-  | { status: 'loaded'; images: string[] }
+  | { status: 'loaded'; head: string[]; tail: string[] }
   | { status: 'error' }
+
+/** Resposta bruta do preview de um capítulo, guardada em cache por id. */
+export interface ChapterPreview {
+  images: string[]
+  tail: string[]
+}
 
 /** Estado local de um volume no VolumeBuilder. */
 export interface Volume {
@@ -76,6 +87,11 @@ export function VolumeCard({
   const fileRef = useRef<HTMLInputElement>(null)
   const [pullN, setPullN] = useState('10')
   const [coverError, setCoverError] = useState<string | null>(null)
+  // Lightbox de preview: lista combinada (head + tail) e índice aberto.
+  const [lightbox, setLightbox] = useState<{
+    images: string[]
+    index: number
+  } | null>(null)
 
   async function handleCoverFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -99,6 +115,14 @@ export function VolumeCard({
     1,
     Math.min(parseInt(pullN, 10) || 1, unassignedCount),
   )
+
+  // Preview pronto → 1ª página do 1º capítulo serve de capa quando não há uma
+  // enviada pelo usuário. As pontas alimentam o preview e o lightbox.
+  const head = preview?.status === 'loaded' ? preview.head : []
+  const tail = preview?.status === 'loaded' ? preview.tail : []
+  const autoCover = head[0]
+  const displayCover = volume.coverImage ?? autoCover
+  const combined = [...head, ...tail]
 
   return (
     <div className="overflow-hidden rounded-xl border border-neutral-700/60 bg-neutral-900">
@@ -152,16 +176,21 @@ export function VolumeCard({
                 : `Adicionar capa para ${volume.name}`
             }
           >
-            {volume.coverImage ? (
+            {displayCover ? (
               <>
                 <img
-                  src={volume.coverImage}
+                  src={displayCover}
                   alt={`Capa de ${volume.name}`}
                   className="h-full w-full object-cover"
                 />
                 <div className="absolute inset-0 flex items-center justify-center bg-black/55 opacity-0 transition group-hover:opacity-100">
                   <ImagePlus size={20} className="text-white" aria-hidden="true" />
                 </div>
+                {!volume.coverImage && autoCover && (
+                  <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/70 px-1 py-0.5 text-[8px] font-medium uppercase tracking-wide text-neutral-300">
+                    pág. 1
+                  </span>
+                )}
               </>
             ) : (
               <div className="flex flex-col items-center gap-1.5 text-neutral-700">
@@ -264,37 +293,89 @@ export function VolumeCard({
         </div>
       </div>
 
-      {/* Pré-visualização das primeiras páginas do 1º capítulo */}
+      {/* Pré-visualização: 3 primeiras do 1º cap. + 3 últimas do último cap. */}
       {preview && count > 0 && (
-        <div className="border-t border-neutral-800/60 px-4 py-3 space-y-2">
-          <p className="text-[10px] leading-snug text-neutral-600">
-            Primeiras páginas do 1º capítulo - confira se a capa já veio na imagem.
-          </p>
+        <div className="border-t border-neutral-800/60 px-4 py-3 space-y-2.5">
           {preview.status === 'loading' && (
             <div className="flex items-center gap-1.5 text-neutral-600">
               <Loader2 size={12} className="animate-spin" aria-hidden="true" />
               <span className="text-[10px]">Carregando preview…</span>
             </div>
           )}
-          {preview.status === 'loaded' && preview.images.length > 0 && (
-            <div className="flex gap-1.5">
-              {preview.images.map((img, i) => (
-                <img
-                  key={i}
-                  src={img}
-                  alt={`Pág. ${i + 1} do 1º capítulo`}
-                  className="aspect-[2/3] h-20 w-auto rounded object-cover"
-                />
-              ))}
-            </div>
-          )}
-          {preview.status === 'loaded' && preview.images.length === 0 && (
-            <p className="text-[10px] italic text-neutral-700">sem páginas</p>
+          {preview.status === 'loaded' && (
+            <>
+              {/* Primeiras páginas do 1º capítulo */}
+              <div className="space-y-1.5">
+                <p className="text-[10px] leading-snug text-neutral-600">
+                  Primeiras páginas do 1º capítulo - confira se a capa já veio na
+                  imagem.
+                </p>
+                {head.length > 0 ? (
+                  <div className="flex gap-1.5">
+                    {head.map((img, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setLightbox({ images: combined, index: i })}
+                        className="overflow-hidden rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                        aria-label={`Ampliar página ${i + 1} do 1º capítulo`}
+                      >
+                        <img
+                          src={img}
+                          alt={`Pág. ${i + 1} do 1º capítulo`}
+                          className="aspect-[2/3] h-20 w-auto cursor-zoom-in object-cover transition hover:brightness-110"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[10px] italic text-neutral-700">sem páginas</p>
+                )}
+              </div>
+
+              {/* Últimas páginas do último capítulo */}
+              {tail.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] leading-snug text-neutral-600">
+                    Últimas páginas do último capítulo - às vezes vem a capa do
+                    próximo.
+                  </p>
+                  <div className="flex gap-1.5">
+                    {tail.map((img, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() =>
+                          setLightbox({ images: combined, index: head.length + i })
+                        }
+                        className="overflow-hidden rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                        aria-label={`Ampliar página final ${i + 1}`}
+                      >
+                        <img
+                          src={img}
+                          alt={`Última pág. ${i + 1}`}
+                          className="aspect-[2/3] h-20 w-auto cursor-zoom-in object-cover transition hover:brightness-110"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
           {preview.status === 'error' && (
             <p className="text-[10px] italic text-neutral-600">preview indisponível</p>
           )}
         </div>
+      )}
+
+      {lightbox && (
+        <PreviewLightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onIndexChange={(index) => setLightbox({ ...lightbox, index })}
+          onClose={() => setLightbox(null)}
+        />
       )}
     </div>
   )

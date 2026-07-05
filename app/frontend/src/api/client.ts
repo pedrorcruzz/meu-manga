@@ -288,11 +288,12 @@ export const api = {
       { method: 'DELETE' },
     ),
   /**
-   * Pré-visualiza as primeiras páginas de um capítulo como data URLs JPEG.
-   * Retorna até `count` imagens já redimensionadas pelo backend.
+   * Pré-visualiza as páginas de um capítulo como data URLs JPEG.
+   * `images` = primeiras `count` páginas; `tail` = últimas `count` páginas.
+   * Ambas já vêm redimensionadas pelo backend.
    */
   previewChapter: (source: string, chapter: Chapter, count = 3) =>
-    req<{ images: string[] }>('/preview', {
+    req<{ images: string[]; tail: string[] }>('/preview', {
       method: 'POST',
       body: JSON.stringify({ source, chapter, count }),
     }),

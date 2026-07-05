@@ -31,6 +31,7 @@ type Page interface {
 	Goto(ctx context.Context, url string) error
 	Eval(js string) (string, error)
 	CaptureImages(ctx context.Context, chapterURL, urlContains string, idle time.Duration, onImage func(url string, data []byte) error) error
+	CapturePreview(ctx context.Context, chapterURL, urlContains string, idle time.Duration, onImage func(url string, data []byte) error) error
 	Close()
 }
 
@@ -139,6 +140,61 @@ func (a *Adapter) DownloadChapter(ctx context.Context, ch domain.Chapter, sink d
 		}
 	}
 	return nil
+}
+
+// previewIdle é o silêncio (sem novas páginas) que encerra a varredura de
+// preview. Curto de propósito: o preview aceita faltar página em troca de ser
+// rápido, diferente do download que persegue 100%.
+const previewIdle = 4 * time.Second
+
+// PreviewChapter faz uma captura leve (uma passada só, para frente) e devolve os
+// bytes das primeiras e das últimas `count` páginas do capítulo. Bem mais rápido
+// que DownloadChapter: não faz o passe reverso nem re-navega atrás de lacunas.
+func (a *Adapter) PreviewChapter(ctx context.Context, ch domain.Chapter, count int) (head, tail [][]byte, err error) {
+	if count <= 0 {
+		count = 1
+	}
+	page, err := a.open(ctx, Host)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer page.Close()
+
+	pages := map[int][]byte{}
+	cerr := page.CapturePreview(ctx, ch.URL, imagePath, previewIdle, func(u string, data []byte) error {
+		if idx := pageIndex(u); idx > 0 && isImage(data) {
+			if _, ok := pages[idx]; !ok {
+				pages[idx] = data
+			}
+		}
+		return nil
+	})
+	if cerr == domain.ErrReaderCaptcha {
+		return nil, nil, cerr
+	}
+	if len(pages) == 0 {
+		if cerr != nil {
+			return nil, nil, cerr
+		}
+		return nil, nil, domain.ErrNoPages
+	}
+
+	idxs := make([]int, 0, len(pages))
+	for idx := range pages {
+		idxs = append(idxs, idx)
+	}
+	sort.Ints(idxs)
+
+	// primeiras `count`
+	for _, idx := range idxs[:min(count, len(idxs))] {
+		head = append(head, pages[idx])
+	}
+	// últimas `count`, sem repetir as já incluídas no head
+	start := max(len(idxs)-count, min(count, len(idxs)))
+	for _, idx := range idxs[start:] {
+		tail = append(tail, pages[idx])
+	}
+	return head, tail, nil
 }
 
 // loadAllChapters clica o botão "ver mais" até carregar todos os capítulos.

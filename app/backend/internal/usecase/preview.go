@@ -3,7 +3,6 @@ package usecase
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -22,13 +21,23 @@ const (
 	previewThumbQuality = 80
 )
 
-// errEnoughPages é sinal interno: o sink já coletou páginas suficientes.
-// Não indica falha — apenas interrompe o streaming do capítulo mais cedo.
-var errEnoughPages = errors.New("preview: enough pages collected")
-
 type previewKey struct {
 	url   string
 	count int
+}
+
+// previewResult guarda as thumbnails (data URLs) das primeiras e das últimas
+// páginas de um capítulo.
+type previewResult struct {
+	head []string
+	tail []string
+}
+
+// chapterPreviewer é a interface opcional de uma Source que sabe fazer um
+// preview leve (captura rápida das primeiras/últimas páginas). Quando a fonte a
+// implementa, o Previewer a usa no lugar de DownloadChapter (bem mais pesado).
+type chapterPreviewer interface {
+	PreviewChapter(ctx context.Context, ch domain.Chapter, count int) (head, tail [][]byte, err error)
 }
 
 // Previewer fetches the first few pages of a chapter and returns them as
@@ -39,8 +48,8 @@ type Previewer struct {
 	gate  *domain.RateGate // nil = sem gate de rate-limit
 
 	mu    sync.Mutex
-	cache map[previewKey][]string // cache evita requisições repetidas ao browser
-	order []previewKey            // ordem FIFO para evicção quando o cache enche
+	cache map[previewKey]previewResult // cache evita requisições repetidas ao browser
+	order []previewKey                 // ordem FIFO para evicção quando o cache enche
 }
 
 // NewPreviewer creates a Previewer backed by the given registry and thumbnailer.
@@ -48,16 +57,17 @@ func NewPreviewer(reg SourceRegistry, thumb Thumbnailer) *Previewer {
 	return &Previewer{
 		reg:   reg,
 		thumb: thumb,
-		cache: make(map[previewKey][]string),
+		cache: make(map[previewKey]previewResult),
 	}
 }
 
 // SetGate liga o Previewer ao RateGate compartilhado.
 func (p *Previewer) SetGate(g *domain.RateGate) { p.gate = g }
 
-// Preview returns up to count thumbnail data-URLs for the first pages of ch.
-// count defaults to previewDefaultCount when ≤0 and is capped at previewMaxCount.
-func (p *Previewer) Preview(ctx context.Context, sourceID string, ch domain.Chapter, count int) ([]string, error) {
+// Preview returns thumbnail data-URLs for the first and last `count` pages of
+// ch. count defaults to previewDefaultCount when ≤0 and is capped at
+// previewMaxCount.
+func (p *Previewer) Preview(ctx context.Context, sourceID string, ch domain.Chapter, count int) (head, tail []string, err error) {
 	if count <= 0 {
 		count = previewDefaultCount
 	}
@@ -67,55 +77,67 @@ func (p *Previewer) Preview(ctx context.Context, sourceID string, ch domain.Chap
 
 	if p.gate != nil {
 		if be := p.gate.Blocked(time.Now()); be != nil {
-			return nil, be
+			return nil, nil, be
 		}
 	}
 
 	src, err := p.reg.Get(sourceID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	key := previewKey{url: ch.URL, count: count}
 
 	// verifica o cache antes de acionar o browser
 	p.mu.Lock()
-	if imgs, ok := p.cache[key]; ok {
+	if res, ok := p.cache[key]; ok {
 		p.mu.Unlock()
-		return imgs, nil
+		return res.head, res.tail, nil
 	}
 	p.mu.Unlock()
 
-	imgs, err := p.fetch(ctx, src, ch, count)
+	res, err := p.fetch(ctx, src, ch, count)
 	if err != nil {
 		if p.gate != nil {
 			err = p.gate.Record(err)
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	p.mu.Lock()
-	p.store(key, imgs)
+	p.store(key, res)
 	p.mu.Unlock()
 
-	return imgs, nil
+	return res.head, res.tail, nil
 }
 
-// fetch drives DownloadChapter and stops early after count pages.
-func (p *Previewer) fetch(ctx context.Context, src domain.Source, ch domain.Chapter, count int) ([]string, error) {
-	var raw [][]byte
-	err := src.DownloadChapter(ctx, ch, func(pg domain.Page) error {
-		raw = append(raw, pg.Data)
-		if len(raw) >= count {
-			return errEnoughPages // interrompe o streaming após coletar o suficiente
+// fetch busca as primeiras/últimas páginas do capítulo. Usa o preview leve da
+// fonte quando disponível; caso contrário cai no DownloadChapter completo.
+func (p *Previewer) fetch(ctx context.Context, src domain.Source, ch domain.Chapter, count int) (previewResult, error) {
+	if fast, ok := src.(chapterPreviewer); ok {
+		h, t, err := fast.PreviewChapter(ctx, ch, count)
+		if err != nil {
+			return previewResult{}, err
 		}
-		return nil
-	})
-	// errEnoughPages é sinal interno, não falha real
-	if err != nil && !errors.Is(err, errEnoughPages) {
-		return nil, fmt.Errorf("preview fetch: %w", err)
+		return previewResult{head: p.encode(h), tail: p.encode(t)}, nil
 	}
 
+	// fallback: captura o capítulo inteiro e recorta as pontas
+	var raw [][]byte
+	if err := src.DownloadChapter(ctx, ch, func(pg domain.Page) error {
+		raw = append(raw, pg.Data)
+		return nil
+	}); err != nil {
+		return previewResult{}, fmt.Errorf("preview fetch: %w", err)
+	}
+	headRaw := raw[:min(count, len(raw))]
+	start := max(len(raw)-count, min(count, len(raw)))
+	tailRaw := raw[start:]
+	return previewResult{head: p.encode(headRaw), tail: p.encode(tailRaw)}, nil
+}
+
+// encode redimensiona cada imagem e a serializa como data URL JPEG base64.
+func (p *Previewer) encode(raw [][]byte) []string {
 	imgs := make([]string, 0, len(raw))
 	for _, data := range raw {
 		thumb, terr := p.thumb(data, previewThumbSide, previewThumbQuality)
@@ -124,13 +146,13 @@ func (p *Previewer) fetch(ctx context.Context, src domain.Source, ch domain.Chap
 		}
 		imgs = append(imgs, "data:image/jpeg;base64,"+base64.StdEncoding.EncodeToString(thumb))
 	}
-	return imgs, nil
+	return imgs
 }
 
 // store insere uma entrada no cache usando evicção FIFO quando o limite é atingido.
-func (p *Previewer) store(key previewKey, imgs []string) {
+func (p *Previewer) store(key previewKey, res previewResult) {
 	if _, exists := p.cache[key]; exists {
-		p.cache[key] = imgs
+		p.cache[key] = res
 		return
 	}
 	if len(p.order) >= previewMaxCache {
@@ -138,6 +160,6 @@ func (p *Previewer) store(key previewKey, imgs []string) {
 		p.order = p.order[1:]
 		delete(p.cache, oldest)
 	}
-	p.cache[key] = imgs
+	p.cache[key] = res
 	p.order = append(p.order, key)
 }

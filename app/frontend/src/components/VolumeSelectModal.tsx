@@ -18,7 +18,8 @@ import {
   X,
 } from 'lucide-react'
 import { api, type Chapter } from '~/api/client'
-import type { Volume, PreviewState } from './VolumeCard'
+import type { Volume, PreviewState, ChapterPreview } from './VolumeCard'
+import { PreviewLightbox } from './PreviewLightbox'
 import { useIncremental } from '~/hooks/useIncremental'
 
 /** Lê um arquivo de imagem como data URL base64 (qualquer formato). */
@@ -107,10 +108,10 @@ interface VolumeSelectModalProps {
   /** Capítulos que a fonte não colocou em nenhum volume. */
   leftoverChapters?: Chapter[]
   /**
-   * Cache de imagens de preview compartilhado com o VolumeBuilder, para não
-   * refazer o fetch ao confirmar. Chave: `${chapter.id}:3`.
+   * Cache de preview compartilhado com o VolumeBuilder, para não refazer o
+   * fetch ao confirmar. Chave: `${chapter.id}:3`.
    */
-  previewCache?: React.MutableRefObject<Map<string, string[]>>
+  previewCache?: React.MutableRefObject<Map<string, ChapterPreview>>
   /** Recebe apenas os volumes marcados pelo usuário (propostos + montados aqui). */
   onConfirm: (selected: Volume[]) => void
   onClose: () => void
@@ -174,8 +175,13 @@ export function VolumeSelectModal({
   const [covers, setCovers] = useState<Record<string, string | null>>({})
   const [coverErrors, setCoverErrors] = useState<Record<string, string>>({})
   // Cache local usado quando o VolumeBuilder não passa um compartilhado.
-  const localCacheRef = useRef<Map<string, string[]>>(new Map())
+  const localCacheRef = useRef<Map<string, ChapterPreview>>(new Map())
   const cacheRef = previewCache ?? localCacheRef
+  // Lightbox de preview: lista combinada (head + tail) e índice aberto.
+  const [lightbox, setLightbox] = useState<{
+    images: string[]
+    index: number
+  } | null>(null)
   // Input de arquivo único, reaproveitado para qualquer volume (via target).
   const coverInputRef = useRef<HTMLInputElement>(null)
   const coverTargetRef = useRef<string | null>(null)
@@ -185,24 +191,38 @@ export function VolumeSelectModal({
     return vol.id in covers ? covers[vol.id] : vol.coverImage
   }
 
-  /** Busca as 3 primeiras páginas do 1º capítulo do volume (com cache). */
-  function fetchPreview(vol: Volume) {
-    const ch = vol.chapters[0]
-    if (!ch) return
+  /** Busca (com cache por capítulo) o preview bruto de um capítulo. */
+  async function getChapterPreview(ch: Chapter): Promise<ChapterPreview> {
     const key = `${ch.id}:3`
     const cached = cacheRef.current.get(key)
-    if (cached) {
-      setPreviews((p) => ({ ...p, [vol.id]: { status: 'loaded', images: cached } }))
-      return
-    }
+    if (cached) return cached
+    const res = await api.previewChapter(source, ch, 3)
+    const val: ChapterPreview = { images: res.images, tail: res.tail }
+    cacheRef.current.set(key, val)
+    return val
+  }
+
+  /**
+   * Carrega o preview do volume: 3 primeiras páginas do 1º capítulo (head) e
+   * 3 últimas do último capítulo (tail). Reaproveita o cache por capítulo.
+   */
+  function fetchPreview(vol: Volume) {
+    const first = vol.chapters[0]
+    if (!first) return
+    const last = vol.chapters[vol.chapters.length - 1]
     setPreviews((p) => ({ ...p, [vol.id]: { status: 'loading' } }))
-    api
-      .previewChapter(source, ch, 3)
-      .then((res) => {
-        cacheRef.current.set(key, res.images)
+    Promise.all([
+      getChapterPreview(first),
+      first.id === last.id ? Promise.resolve(null) : getChapterPreview(last),
+    ])
+      .then(([firstPrev, lastPrev]) => {
         setPreviews((p) => ({
           ...p,
-          [vol.id]: { status: 'loaded', images: res.images },
+          [vol.id]: {
+            status: 'loaded',
+            head: firstPrev.images,
+            tail: (lastPrev ?? firstPrev).tail,
+          },
         }))
       })
       .catch(() => {
@@ -391,6 +411,7 @@ export function VolumeSelectModal({
   ).length
 
   return (
+    <>
     <div
       role="dialog"
       aria-modal="true"
@@ -645,10 +666,16 @@ export function VolumeSelectModal({
                 const checked = selected.has(vol.id)
                 const num = volNumber.get(vol.id) ?? 0
                 const isExtra = extraIds.has(vol.id)
-                const cover = effectiveCover(vol)
                 const isOpen = expanded.has(vol.id)
                 const prev = previews[vol.id]
                 const coverErr = coverErrors[vol.id]
+                const head = prev?.status === 'loaded' ? prev.head : []
+                const tail = prev?.status === 'loaded' ? prev.tail : []
+                const combined = [...head, ...tail]
+                // Sem capa enviada → a 1ª página do 1º cap. (quando já carregada)
+                // vira a capa, no lugar do ícone de livro.
+                const cover = effectiveCover(vol) ?? head[0]
+                const autoCover = !effectiveCover(vol) && head[0]
                 return (
                   <div
                     key={vol.id}
@@ -718,6 +745,11 @@ export function VolumeSelectModal({
                             capa
                           </span>
                         )}
+                        {autoCover && (
+                          <span className="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-neutral-300">
+                            pág. 1
+                          </span>
+                        )}
                       </div>
 
                       {/* Rótulo do volume */}
@@ -758,11 +790,7 @@ export function VolumeSelectModal({
 
                     {/* Painel expandido: preview + adicionar capa */}
                     {isOpen && (
-                      <div className="space-y-2 border-t border-neutral-800 bg-neutral-950/40 px-2.5 py-2.5">
-                        <p className="text-[10px] leading-snug text-neutral-500">
-                          Primeiras páginas do 1º capítulo - confira se a capa já
-                          veio na imagem.
-                        </p>
+                      <div className="space-y-2.5 border-t border-neutral-800 bg-neutral-950/40 px-2.5 py-2.5">
                         {(!prev || prev.status === 'loading') && (
                           <div className="flex items-center gap-1.5 text-neutral-600">
                             <Loader2
@@ -773,22 +801,73 @@ export function VolumeSelectModal({
                             <span className="text-[10px]">Carregando preview…</span>
                           </div>
                         )}
-                        {prev?.status === 'loaded' && prev.images.length > 0 && (
-                          <div className="flex flex-wrap gap-1">
-                            {prev.images.map((img, i) => (
-                              <img
-                                key={i}
-                                src={img}
-                                alt={`Pág. ${i + 1} do 1º capítulo`}
-                                className="aspect-[2/3] h-16 w-auto rounded object-cover"
-                              />
-                            ))}
-                          </div>
-                        )}
-                        {prev?.status === 'loaded' && prev.images.length === 0 && (
-                          <p className="text-[10px] italic text-neutral-700">
-                            sem páginas
-                          </p>
+                        {prev?.status === 'loaded' && (
+                          <>
+                            {/* Primeiras páginas do 1º capítulo */}
+                            <div className="space-y-1">
+                              <p className="text-[10px] leading-snug text-neutral-500">
+                                Primeiras páginas do 1º capítulo - confira se a
+                                capa já veio na imagem.
+                              </p>
+                              {head.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {head.map((img, i) => (
+                                    <button
+                                      key={i}
+                                      type="button"
+                                      onClick={() =>
+                                        setLightbox({ images: combined, index: i })
+                                      }
+                                      className="overflow-hidden rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                                      aria-label={`Ampliar página ${i + 1} do 1º capítulo`}
+                                    >
+                                      <img
+                                        src={img}
+                                        alt={`Pág. ${i + 1} do 1º capítulo`}
+                                        className="aspect-[2/3] h-16 w-auto cursor-zoom-in object-cover transition hover:brightness-110"
+                                      />
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-[10px] italic text-neutral-700">
+                                  sem páginas
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Últimas páginas do último capítulo */}
+                            {tail.length > 0 && (
+                              <div className="space-y-1">
+                                <p className="text-[10px] leading-snug text-neutral-500">
+                                  Últimas páginas do último capítulo - às vezes
+                                  vem a capa do próximo.
+                                </p>
+                                <div className="flex flex-wrap gap-1">
+                                  {tail.map((img, i) => (
+                                    <button
+                                      key={i}
+                                      type="button"
+                                      onClick={() =>
+                                        setLightbox({
+                                          images: combined,
+                                          index: head.length + i,
+                                        })
+                                      }
+                                      className="overflow-hidden rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                                      aria-label={`Ampliar página final ${i + 1}`}
+                                    >
+                                      <img
+                                        src={img}
+                                        alt={`Última pág. ${i + 1}`}
+                                        className="aspect-[2/3] h-16 w-auto cursor-zoom-in object-cover transition hover:brightness-110"
+                                      />
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
                         {prev?.status === 'error' && (
                           <p className="text-[10px] italic text-neutral-600">
@@ -804,9 +883,9 @@ export function VolumeSelectModal({
                             className="flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-800/60 px-2 py-1 text-[10px] text-neutral-300 transition-colors hover:bg-neutral-800"
                           >
                             <ImagePlus size={11} aria-hidden="true" />
-                            {cover ? 'Trocar capa' : 'Adicionar capa'}
+                            {effectiveCover(vol) ? 'Trocar capa' : 'Adicionar capa'}
                           </button>
-                          {cover && (
+                          {effectiveCover(vol) && (
                             <button
                               type="button"
                               onClick={() => removeCover(vol.id)}
@@ -865,5 +944,15 @@ export function VolumeSelectModal({
         </div>
       </div>
     </div>
+
+    {lightbox && (
+      <PreviewLightbox
+        images={lightbox.images}
+        index={lightbox.index}
+        onIndexChange={(index) => setLightbox({ ...lightbox, index })}
+        onClose={() => setLightbox(null)}
+      />
+    )}
+    </>
   )
 }
