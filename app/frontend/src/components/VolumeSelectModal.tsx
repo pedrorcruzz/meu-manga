@@ -1,18 +1,21 @@
 // Popup centralizado que exibe os volumes propostos como "capas" lado a lado.
 // O usuário escolhe quais volumes quer montar (selecionar tudo / desmarcar tudo)
-// antes de confirmar. Usado tanto pelo preset do Sakura quanto pelo N-por-volume.
+// antes de confirmar. Capítulos que a fonte não colocou em nenhum volume
+// (lançamentos recentes) aparecem num painel próprio, onde dá para montá-los
+// em volumes escolhendo os capítulos e quantos por volume.
 
-import { useEffect, useMemo, useState } from 'react'
-import { BookOpen, Check, Layers, Search, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AlertTriangle,
+  BookOpen,
+  Check,
+  Layers,
+  Plus,
+  Search,
+  X,
+} from 'lucide-react'
+import type { Chapter } from '~/api/client'
 import type { Volume } from './VolumeCard'
-
-/** true se o volume bate com a busca (nome, rótulo ou número de capítulo). */
-function matchesQuery(vol: Volume, q: string): boolean {
-  if (!q) return true
-  if (vol.name.toLowerCase().includes(q)) return true
-  if (vol.label && vol.label.toLowerCase().includes(q)) return true
-  return vol.chapters.some((c) => c.number.toLowerCase().includes(q))
-}
 
 /** Faixa de capítulos de um volume, ex.: "Cap. 1 – 14" ou "Cap. 7". */
 function chapterRange(vol: Volume): string {
@@ -34,11 +37,33 @@ function chaptersTooltip(vol: Volume): string {
   return `${vol.name} — Cap. ${nums.join(', ')}`
 }
 
+/** true se o volume bate com a busca (nome, rótulo ou número de capítulo). */
+function matchesQuery(vol: Volume, q: string): boolean {
+  if (!q) return true
+  if (vol.name.toLowerCase().includes(q)) return true
+  if (vol.label && vol.label.toLowerCase().includes(q)) return true
+  return vol.chapters.some((c) => c.number.toLowerCase().includes(q))
+}
+
+/** Maior número já usado entre os nomes/rótulos dos volumes. */
+function maxVolNum(vols: Volume[]): number {
+  let max = 0
+  for (const v of vols) {
+    const nm = v.name.match(/\d+/)
+    if (nm) max = Math.max(max, parseInt(nm[0], 10))
+    const lm = v.label?.match(/\d+/)
+    if (lm) max = Math.max(max, parseInt(lm[0], 10))
+  }
+  return max
+}
+
 interface VolumeSelectModalProps {
   title: string
-  /** Volumes propostos a exibir como capas. */
+  /** Volumes propostos automaticamente. */
   volumes: Volume[]
-  /** Recebe apenas os volumes marcados pelo usuário. */
+  /** Capítulos que a fonte não colocou em nenhum volume. */
+  leftoverChapters?: Chapter[]
+  /** Recebe apenas os volumes marcados pelo usuário (propostos + montados aqui). */
   onConfirm: (selected: Volume[]) => void
   onClose: () => void
 }
@@ -46,21 +71,57 @@ interface VolumeSelectModalProps {
 export function VolumeSelectModal({
   title,
   volumes,
+  leftoverChapters = [],
   onConfirm,
   onClose,
 }: VolumeSelectModalProps) {
-  // Começa com todos os volumes marcados.
+  // Volumes montados dentro do popup a partir dos capítulos sem volume.
+  const [extraVols, setExtraVols] = useState<Volume[]>([])
+  const extraIdRef = useRef(0)
+
+  const allVolumes = useMemo(
+    () => [...volumes, ...extraVols],
+    [volumes, extraVols],
+  )
+  const extraIds = useMemo(
+    () => new Set(extraVols.map((v) => v.id)),
+    [extraVols],
+  )
+
+  // Começa com todos os volumes propostos marcados.
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(volumes.map((v) => v.id)),
   )
   const [query, setQuery] = useState('')
 
+  // Capítulos sem volume ainda não consumidos em algum volume extra.
+  const consumedIds = useMemo(
+    () => new Set(extraVols.flatMap((v) => v.chapters.map((c) => c.id))),
+    [extraVols],
+  )
+  const remainingLeftovers = useMemo(
+    () => leftoverChapters.filter((c) => !consumedIds.has(c.id)),
+    [leftoverChapters, consumedIds],
+  )
+
+  const [leftoverSel, setLeftoverSel] = useState<Set<string>>(
+    () => new Set(leftoverChapters.map((c) => c.id)),
+  )
+  const [perVol, setPerVol] = useState('10')
+  const [showLeftover, setShowLeftover] = useState(leftoverChapters.length > 0)
+
   // Volumes visíveis após a busca — as ações de marcar operam sobre este subconjunto.
   const visibleVolumes = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return volumes
-    return volumes.filter((v) => matchesQuery(v, q))
-  }, [volumes, query])
+    if (!q) return allVolumes
+    return allVolumes.filter((v) => matchesQuery(v, q))
+  }, [allVolumes, query])
+
+  // Número real de cada volume (posição na lista completa), para o rótulo "VOLUME N".
+  const volNumber = useMemo(
+    () => new Map(allVolumes.map((v, i) => [v.id, i + 1])),
+    [allVolumes],
+  )
 
   // ESC fecha o popup.
   useEffect(() => {
@@ -73,21 +134,18 @@ export function VolumeSelectModal({
   }, [onClose])
 
   const totalChapters = useMemo(
-    () => volumes.reduce((sum, v) => sum + v.chapters.length, 0),
-    [volumes],
-  )
-  // Número real de cada volume (posição na lista completa), para o rótulo "VOLUME N".
-  const volNumber = useMemo(
-    () => new Map(volumes.map((v, i) => [v.id, i + 1])),
-    [volumes],
+    () => allVolumes.reduce((sum, v) => sum + v.chapters.length, 0),
+    [allVolumes],
   )
   const selectedChapters = useMemo(
     () =>
-      volumes
+      allVolumes
         .filter((v) => selected.has(v.id))
         .reduce((sum, v) => sum + v.chapters.length, 0),
-    [volumes, selected],
+    [allVolumes, selected],
   )
+
+  // ── Seleção de volumes ─────────────────────────────────────────────────────
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -124,10 +182,58 @@ export function VolumeSelectModal({
   }
 
   function confirm() {
-    const chosen = volumes.filter((v) => selected.has(v.id))
+    const chosen = allVolumes.filter((v) => selected.has(v.id))
     if (chosen.length === 0) return
     onConfirm(chosen)
   }
+
+  // ── Capítulos sem volume → montar em volumes ───────────────────────────────
+
+  function toggleLeftover(id: string) {
+    setLeftoverSel((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function selectAllLeftover() {
+    setLeftoverSel(new Set(remainingLeftovers.map((c) => c.id)))
+  }
+
+  function clearLeftover() {
+    setLeftoverSel(new Set())
+  }
+
+  function addLeftoverVolumes() {
+    const chosen = remainingLeftovers
+      .filter((c) => leftoverSel.has(c.id))
+      .sort((a, b) => parseFloat(a.number) - parseFloat(b.number))
+    if (chosen.length === 0) return
+    const n = Math.max(1, parseInt(perVol, 10) || 10)
+
+    let start = maxVolNum(allVolumes) + 1
+    const created: Volume[] = []
+    for (let i = 0; i < chosen.length; i += n) {
+      created.push({
+        id: `extra-${++extraIdRef.current}`,
+        name: `V${String(start++).padStart(3, '0')}`,
+        chapters: chosen.slice(i, i + n),
+        coverImage: null,
+      })
+    }
+    setExtraVols((prev) => [...prev, ...created])
+    setSelected((prev) => {
+      const next = new Set(prev)
+      created.forEach((v) => next.add(v.id))
+      return next
+    })
+    // Os capítulos consumidos saem da lista automaticamente (via consumedIds).
+  }
+
+  const leftoverSelCount = remainingLeftovers.filter((c) =>
+    leftoverSel.has(c.id),
+  ).length
 
   return (
     <div
@@ -139,7 +245,7 @@ export function VolumeSelectModal({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="vol-modal-panel flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl">
+      <div className="vol-modal-panel flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl">
         {/* Cabeçalho */}
         <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
           <div className="flex items-center gap-2.5">
@@ -147,7 +253,8 @@ export function VolumeSelectModal({
             <div>
               <h2 className="font-semibold text-neutral-100">{title}</h2>
               <p className="text-xs text-neutral-500">
-                {volumes.length} {volumes.length === 1 ? 'volume' : 'volumes'} ·{' '}
+                {allVolumes.length}{' '}
+                {allVolumes.length === 1 ? 'volume' : 'volumes'} ·{' '}
                 {totalChapters} capítulos — escolha quais montar
               </p>
             </div>
@@ -221,15 +328,124 @@ export function VolumeSelectModal({
           </button>
           <span className="ml-auto font-mono text-xs text-neutral-500">
             {query ? `${visibleVolumes.length} achados · ` : ''}
-            {selected.size}/{volumes.length} vol.
+            {selected.size}/{allVolumes.length} vol.
           </span>
         </div>
 
-        {/* Grade de capas */}
-        <div className="retro-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {volumes.length === 0 ? (
+        {/* Corpo com scroll */}
+        <div className="retro-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {/* Painel dos capítulos sem volume */}
+          {remainingLeftovers.length > 0 && (
+            <div className="rounded-xl border border-amber-700/40 bg-amber-950/20 p-3.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <AlertTriangle
+                  size={14}
+                  className="text-amber-400"
+                  aria-hidden="true"
+                />
+                <span className="text-sm font-medium text-amber-200">
+                  {remainingLeftovers.length} capítulo
+                  {remainingLeftovers.length !== 1 ? 's' : ''} sem volume
+                  detectado
+                </span>
+                <span className="text-xs text-amber-200/60">
+                  — a fonte não agrupou; monte manualmente aqui
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowLeftover((s) => !s)}
+                  className="ml-auto text-xs text-amber-300/80 transition-colors hover:text-amber-200"
+                >
+                  {showLeftover ? 'Ocultar' : 'Mostrar'}
+                </button>
+              </div>
+
+              {showLeftover && (
+                <div className="mt-3 space-y-2.5">
+                  {/* Ações rápidas */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={selectAllLeftover}
+                      className="text-neutral-300 transition-colors hover:text-white"
+                    >
+                      Selecionar todos
+                    </button>
+                    <span className="text-neutral-700" aria-hidden="true">
+                      ·
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearLeftover}
+                      className="text-neutral-400 transition-colors hover:text-neutral-200"
+                    >
+                      Limpar
+                    </button>
+                    <span className="ml-auto font-mono text-neutral-500">
+                      {leftoverSelCount}/{remainingLeftovers.length} sel.
+                    </span>
+                  </div>
+
+                  {/* Checklist dos capítulos */}
+                  <div className="retro-scroll max-h-40 overflow-y-auto rounded-lg border border-amber-800/30 bg-neutral-900/50">
+                    <div className="flex flex-wrap gap-1.5 p-2">
+                      {remainingLeftovers.map((c) => {
+                        const checked = leftoverSel.has(c.id)
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => toggleLeftover(c.id)}
+                            aria-pressed={checked}
+                            className={`rounded-md border px-2 py-1 font-mono text-[11px] transition-colors ${
+                              checked
+                                ? 'border-amber-500/60 bg-amber-500/20 text-amber-100'
+                                : 'border-neutral-700 bg-neutral-800/60 text-neutral-500 hover:text-neutral-300'
+                            }`}
+                          >
+                            Cap. {c.number}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Montar em volumes */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label
+                      htmlFor="leftover-per-vol"
+                      className="text-xs text-neutral-400"
+                    >
+                      Capítulos por volume:
+                    </label>
+                    <input
+                      id="leftover-per-vol"
+                      type="number"
+                      min="1"
+                      value={perVol}
+                      onChange={(e) => setPerVol(e.target.value)}
+                      className="w-16 rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-center text-sm focus:border-neutral-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={addLeftoverVolumes}
+                      disabled={leftoverSelCount === 0}
+                      className="flex items-center gap-1.5 rounded-lg bg-amber-500/90 px-3 py-1.5 text-sm font-medium text-amber-950 transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <Plus size={14} aria-hidden="true" />
+                      Adicionar em volumes
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Grade de capas */}
+          {allVolumes.length === 0 ? (
             <p className="py-10 text-center text-sm text-neutral-600">
-              Nenhum volume para montar.
+              Nenhum volume detectado. Use o painel acima para montar os
+              capítulos em volumes.
             </p>
           ) : visibleVolumes.length === 0 ? (
             <p className="py-10 text-center text-sm text-neutral-600">
@@ -240,6 +456,7 @@ export function VolumeSelectModal({
               {visibleVolumes.map((vol) => {
                 const checked = selected.has(vol.id)
                 const num = volNumber.get(vol.id) ?? 0
+                const isExtra = extraIds.has(vol.id)
                 return (
                   <button
                     key={vol.id}
@@ -295,6 +512,11 @@ export function VolumeSelectModal({
                       )}
                       {/* Lombada decorativa */}
                       <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
+                      {isExtra && (
+                        <span className="absolute left-2 top-2 rounded bg-amber-500/90 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-950">
+                          novo
+                        </span>
+                      )}
                     </div>
 
                     {/* Rótulo do volume */}

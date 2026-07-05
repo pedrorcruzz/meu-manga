@@ -1,10 +1,9 @@
 // Construtor de volumes — automático ("Volume Inteligente") ou manual em dois painéis.
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
-  BookOpen,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +18,7 @@ import { api, type Chapter, type VolumeInput } from '~/api/client'
 import { VolumeCard, type Volume, type PreviewState } from './VolumeCard'
 import { VolumeSelectModal } from './VolumeSelectModal'
 import { FilterChip } from './FilterChip'
+import { HelpButton } from './HelpButton'
 import { useIncremental } from '~/hooks/useIncremental'
 
 let _volCounter = 0
@@ -92,7 +92,6 @@ export function VolumeBuilder({
   onDownload,
 }: VolumeBuilderProps) {
   const [volumes, setVolumes] = useState<Volume[]>([])
-  const [chaptersPerVol, setChaptersPerVol] = useState('10')
   const [leftFilter, setLeftFilter] = useState('')
   const [leftSelected, setLeftSelected] = useState<Set<string>>(new Set())
   const [targetVolId, setTargetVolId] = useState<string>('')
@@ -108,8 +107,8 @@ export function VolumeBuilder({
   // ── Popup de seleção de volumes ──────────────────────────────────────────────
   const [pending, setPending] = useState<{
     volumes: Volume[]
+    leftover: Chapter[]
     title: string
-    source: 'sakura' | 'count'
   } | null>(null)
 
   // Popup do montador manual.
@@ -138,7 +137,6 @@ export function VolumeBuilder({
 
   // ── Success animation state ──────────────────────────────────────────────────
   const [sakuraSuccess, setSakuraSuccess] = useState(false)
-  const [applySuccess, setApplySuccess] = useState(false)
 
   // ── Estado derivado ──────────────────────────────────────────────────────────
 
@@ -274,59 +272,37 @@ export function VolumeBuilder({
     void Promise.all([worker(), worker()])
   }
 
-  // ── Presets automáticos ──────────────────────────────────────────────────────
+  // ── Volume Inteligente ───────────────────────────────────────────────────────
 
-  function generateVolumes() {
-    const n = Math.max(1, parseInt(chaptersPerVol, 10) || 10)
-    const newVols: Volume[] = []
-    for (let i = 0; i < chapters.length; i += n) {
-      newVols.push({
-        id: nextVolId(),
-        name: padName(newVols.length),
-        chapters: chapters.slice(i, i + n),
-        coverImage: null,
-      })
-    }
-    if (newVols.length === 0) return
+  /**
+   * Abre o popup: detecta os volumes oficiais da fonte e reúne os capítulos
+   * sem volume (lançamentos recentes) para o usuário montar como quiser.
+   */
+  function openSmartPopup() {
+    const sakuraVols = buildSakuraVolumes(chapters)
+    const inProposed = new Set(
+      sakuraVols.flatMap((v) => v.chapters.map((c) => c.id)),
+    )
+    const leftover = chapters.filter((c) => !inProposed.has(c.id))
+    if (sakuraVols.length === 0 && leftover.length === 0) return
     setPending({
-      volumes: newVols,
-      title: `Volume Inteligente — ${n} cap. por volume`,
-      source: 'count',
+      volumes: sakuraVols,
+      leftover,
+      title: 'Volume Inteligente',
     })
   }
 
-  function generateFromSakura() {
-    const newVols = buildSakuraVolumes(chapters)
-    if (newVols.length === 0) return
-    setPending({
-      volumes: newVols,
-      title: 'Volumes Inteligentes (por volume da fonte)',
-      source: 'sakura',
-    })
-  }
-
-  /** Aplica os volumes escolhidos no popup, renomeando em sequência (V001, V002…). */
+  /** Aplica os volumes escolhidos no popup, mantendo os nomes já atribuídos. */
   function applyPending(chosen: Volume[]) {
-    const source = pending?.source
     setPending(null)
     if (chosen.length === 0) return
-    // Renumera sequencialmente preservando o rótulo original da fonte, se houver.
-    const finalVols = chosen.map((v, i) => ({
-      ...v,
-      name: v.label ? v.name : padName(i),
-    }))
-    setVolumes(finalVols)
+    setVolumes(chosen)
     setCurrentVolIdx(0)
-    setTargetVolId(finalVols[0]?.id ?? '')
+    setTargetVolId(chosen[0]?.id ?? '')
     setLeftSelected(new Set())
-    if (source === 'sakura') {
-      setSakuraSuccess(true)
-      setTimeout(() => setSakuraSuccess(false), 700)
-    } else {
-      setApplySuccess(true)
-      setTimeout(() => setApplySuccess(false), 700)
-    }
-    triggerPreviews(finalVols)
+    setSakuraSuccess(true)
+    setTimeout(() => setSakuraSuccess(false), 700)
+    triggerPreviews(chosen)
   }
 
   // ── Gestão de volumes ────────────────────────────────────────────────────────
@@ -412,28 +388,24 @@ export function VolumeBuilder({
     }
   }
 
-  function handleJump(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    const q = jumpQuery.trim()
+  /** Navega automaticamente enquanto o usuário digita (número ou nome). */
+  function handleJumpChange(value: string) {
+    setJumpQuery(value)
+    const q = value.trim()
     if (!q) return
 
-    const num = parseInt(q, 10)
-
-    // índice 1-based (ex: "3" → volume V003 na posição 3)
-    if (!isNaN(num) && num >= 1 && num <= volumes.length) {
-      goTo(num - 1)
-      setJumpQuery('')
+    // Número puro → vai direto para o volume nessa posição (1-based).
+    if (/^\d+$/.test(q)) {
+      const num = parseInt(q, 10)
+      if (num >= 1 && num <= volumes.length) goTo(num - 1)
       return
     }
 
-    // substring do nome (case-insensitive; ex: "V003", "003")
+    // Substring do nome (case-insensitive; ex: "V003", "003").
     const found = volumes.findIndex((v) =>
       v.name.toLowerCase().includes(q.toLowerCase()),
     )
-    if (found !== -1) {
-      goTo(found)
-      setJumpQuery('')
-    }
+    if (found !== -1) goTo(found)
   }
 
   // ── Painel de capítulos (esquerda) ───────────────────────────────────────────
@@ -535,77 +507,56 @@ export function VolumeBuilder({
 
   return (
     <div className="space-y-5">
-      {/* ── Volume Inteligente ──────────────────────────────────────────────── */}
+      {/* ── Montar volume ───────────────────────────────────────────────────── */}
       <div className="rounded-xl border border-neutral-700/40 bg-neutral-900/50 p-4 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Zap size={14} className="text-yellow-400" aria-hidden="true" />
+        <div className="flex items-center gap-2">
+          <Layers size={15} className="text-indigo-400" aria-hidden="true" />
           <span className="font-mono text-xs font-semibold uppercase tracking-wider text-neutral-300">
-            Volume Inteligente
+            Montar volume
           </span>
           <span className="text-xs text-neutral-600">
-            — presets automáticos (substitui volumes existentes)
+            — escolha como agrupar os capítulos
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {hasSakuraVolumes && (
-            <button
-              type="button"
-              onClick={generateFromSakura}
-              disabled={chapters.length === 0}
-              className={`flex items-center gap-2 rounded-lg border border-indigo-700/50 bg-indigo-900/40 px-4 py-2 text-sm font-medium text-indigo-300 transition-colors hover:border-indigo-600/70 hover:bg-indigo-900/60 disabled:opacity-50${sakuraSuccess ? ' vol-success' : ''}`}
-            >
-              <BookOpen size={14} aria-hidden="true" />
-              Volumes Inteligentes
-            </button>
-          )}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/* Opção: Volume Inteligente */}
           <div className="flex items-center gap-2">
-            <label
-              htmlFor="vb-per-vol"
-              className="text-sm text-neutral-400"
-            >
-              N cap. por volume:
-            </label>
-            <input
-              id="vb-per-vol"
-              type="number"
-              value={chaptersPerVol}
-              min="1"
-              onChange={(e) => setChaptersPerVol(e.target.value)}
-              className="w-16 rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-center text-sm focus:border-neutral-500 focus:outline-none"
-            />
             <button
               type="button"
-              onClick={generateVolumes}
+              onClick={openSmartPopup}
               disabled={chapters.length === 0}
-              className={`rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-sm transition-colors hover:bg-neutral-700 disabled:opacity-50${applySuccess ? ' vol-success' : ''}`}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-lg border border-indigo-700/50 bg-indigo-900/40 px-4 py-2.5 text-sm font-medium text-indigo-300 transition-colors hover:border-indigo-600/70 hover:bg-indigo-900/60 disabled:opacity-50${sakuraSuccess ? ' vol-success' : ''}`}
             >
-              Aplicar
+              <Zap size={15} className="text-yellow-400" aria-hidden="true" />
+              Volume Inteligente
             </button>
+            <HelpButton label="O que é o Volume Inteligente?">
+              Detecta automaticamente os volumes oficiais da fonte e monta as
+              capas pra você — é só escolher quais baixar. Capítulos recentes
+              que ainda não têm volume aparecem num painel à parte, onde você
+              monta eles em volumes escolhendo os capítulos e quantos por
+              volume.
+            </HelpButton>
           </div>
-        </div>
-      </div>
 
-      {/* ── Montador manual (abre popup) ────────────────────────────────────── */}
-      <div className="rounded-xl border border-neutral-700/40 bg-neutral-900/50 p-4">
-        <div className="flex flex-wrap items-center gap-3">
+          {/* Opção: Montar manualmente */}
           <div className="flex items-center gap-2">
-            <Layers size={14} className="text-indigo-400" aria-hidden="true" />
-            <span className="font-mono text-xs font-semibold uppercase tracking-wider text-neutral-300">
+            <button
+              type="button"
+              onClick={() => setManualOpen(true)}
+              disabled={chapters.length === 0}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-neutral-700 bg-neutral-800/60 px-4 py-2.5 text-sm font-medium text-neutral-200 transition-colors hover:bg-neutral-800 disabled:opacity-50"
+            >
+              <Plus size={15} aria-hidden="true" />
               Montar manualmente
-            </span>
-            <span className="text-xs text-neutral-600">
-              — organize capítulo por capítulo em cada volume
-            </span>
+            </button>
+            <HelpButton label="O que é o modo manual?" align="right">
+              Abre um montador onde você organiza capítulo por capítulo em cada
+              volume, com controle total: cria volumes, arrasta os capítulos do
+              pool, define a capa e o nome de cada um. Ideal quando você quer
+              montar do seu jeito, sem seguir os volumes da fonte.
+            </HelpButton>
           </div>
-          <button
-            type="button"
-            onClick={() => setManualOpen(true)}
-            disabled={chapters.length === 0}
-            className="flex items-center gap-2 rounded-lg border border-indigo-700/50 bg-indigo-900/40 px-4 py-2 text-sm font-medium text-indigo-300 transition-colors hover:border-indigo-600/70 hover:bg-indigo-900/60 disabled:opacity-50 sm:ml-auto"
-          >
-            <Plus size={14} aria-hidden="true" />
-            Abrir montador
-          </button>
         </div>
       </div>
 
@@ -969,31 +920,33 @@ export function VolumeBuilder({
                 </button>
               </div>
 
-              {/* Barra de busca/salto */}
-              <form onSubmit={handleJump} className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search
-                    size={12}
-                    className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-600"
-                    aria-hidden="true"
-                  />
-                  <input
-                    type="text"
-                    value={jumpQuery}
-                    onChange={(e) => setJumpQuery(e.target.value)}
-                    placeholder="Ir para volume… (ex: 3 ou V003)"
-                    className="w-full rounded-lg border border-neutral-800 bg-neutral-800/40 py-1.5 pl-7 pr-3 text-xs placeholder:text-neutral-700 focus:border-neutral-600 focus:outline-none"
-                    aria-label="Ir para volume"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={!jumpQuery.trim()}
-                  className="rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs transition-colors hover:bg-neutral-700 disabled:opacity-40"
-                >
-                  Ir
-                </button>
-              </form>
+              {/* Busca/salto — vai automático ao digitar o número ou nome */}
+              <div className="relative">
+                <Search
+                  size={12}
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-600"
+                  aria-hidden="true"
+                />
+                <input
+                  type="text"
+                  value={jumpQuery}
+                  onChange={(e) => handleJumpChange(e.target.value)}
+                  placeholder="Ir para volume… (digite 5 ou V005)"
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-800/40 py-1.5 pl-7 pr-8 text-xs placeholder:text-neutral-700 focus:border-neutral-600 focus:outline-none"
+                  aria-label="Ir para volume"
+                  inputMode="numeric"
+                />
+                {jumpQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setJumpQuery('')}
+                    aria-label="Limpar"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-neutral-600 transition-colors hover:text-neutral-300"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
 
               {/* Pills de salto rápido (exibidas para coleções menores) */}
               {volumes.length <= 20 && (
@@ -1082,15 +1035,6 @@ export function VolumeBuilder({
             ? 'Enviando…'
             : `Baixar ${volumes.length} ${volumes.length === 1 ? 'volume' : 'volumes'}`}
         </button>
-        {volumes.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setManualOpen(true)}
-            className="rounded-xl border border-neutral-700 px-4 py-2.5 text-sm text-neutral-300 transition-colors hover:bg-neutral-800"
-          >
-            Editar volumes
-          </button>
-        )}
         {unassigned.length > 0 && volumes.length > 0 && (
           <p className="text-xs text-amber-400">
             {unassigned.length} capítulo{unassigned.length !== 1 ? 's' : ''} sem
@@ -1104,6 +1048,7 @@ export function VolumeBuilder({
         <VolumeSelectModal
           title={pending.title}
           volumes={pending.volumes}
+          leftoverChapters={pending.leftover}
           onConfirm={applyPending}
           onClose={() => setPending(null)}
         />

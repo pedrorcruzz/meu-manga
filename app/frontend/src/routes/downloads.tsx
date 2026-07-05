@@ -1,7 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowLeft,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -148,6 +149,15 @@ function DownloadsPage() {
 
   return (
     <div className="space-y-5">
+      {/* Navegação de volta */}
+      <Link
+        to="/"
+        className="flex w-fit items-center gap-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-200"
+      >
+        <ArrowLeft size={15} aria-hidden="true" />
+        Voltar
+      </Link>
+
       {/* Pasta de downloads */}
       <DownloadFolderSection />
 

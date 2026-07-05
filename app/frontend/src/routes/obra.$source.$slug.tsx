@@ -6,6 +6,7 @@ import {
   ArrowUp,
   BookOpen,
   Loader2,
+  Pencil,
   Search,
   X,
 } from 'lucide-react'
@@ -18,6 +19,7 @@ import {
 } from '~/api/client'
 import { ChapterList, sortChapters } from '~/components/ChapterList'
 import { FilterChip } from '~/components/FilterChip'
+import { HelpButton } from '~/components/HelpButton'
 import { VolumeBuilder } from '~/components/VolumeBuilder'
 import { useSessionContext } from '~/context/session'
 import { useAsync } from '~/hooks/useAsync'
@@ -271,22 +273,45 @@ function ObraPage() {
             onError={(e) => (e.currentTarget.style.display = 'none')}
           />
         )}
-        <div className="flex flex-col justify-end gap-1.5 pb-1">
-          <input
-            type="text"
-            value={titleOverride ?? data.manga.title}
-            onChange={(e) => setTitleOverride(e.target.value)}
-            className="-mx-1 w-full rounded border border-transparent bg-transparent px-1 text-2xl font-bold leading-tight tracking-tight text-neutral-100 transition-colors focus:border-neutral-600 focus:outline-none sm:text-3xl"
-            aria-label="Título da obra (nome da pasta no disco)"
-            title="Edite para mudar o nome da pasta de destino"
-          />
+        <div className="flex min-w-0 flex-col justify-end gap-2 pb-1">
+          {/* Rótulo do campo editável + ajuda */}
+          <div className="flex items-center gap-1.5">
+            <Pencil size={12} className="text-neutral-500" aria-hidden="true" />
+            <label
+              htmlFor="obra-title"
+              className="font-mono text-[11px] font-semibold uppercase tracking-wider text-neutral-500"
+            >
+              Nome da pasta no disco (editável)
+            </label>
+            <HelpButton label="Para que serve este nome?">
+              É o nome da pasta onde os capítulos serão salvos no seu
+              computador. Editar aqui muda <strong>só</strong> o nome da pasta
+              de destino — não altera o site de origem nem o conteúdo baixado.
+              Ajuste como preferir organizar sua biblioteca.
+            </HelpButton>
+          </div>
+          {/* Campo do título com moldura clara de edição */}
+          <div className="group flex items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-900/60 px-3 py-1.5 transition-colors focus-within:border-neutral-500">
+            <input
+              id="obra-title"
+              type="text"
+              value={titleOverride ?? data.manga.title}
+              onChange={(e) => setTitleOverride(e.target.value)}
+              className="w-full min-w-0 bg-transparent text-2xl font-bold leading-tight tracking-tight text-neutral-100 focus:outline-none sm:text-3xl"
+              aria-label="Nome da pasta no disco (título da obra)"
+            />
+            <Pencil
+              size={15}
+              className="shrink-0 text-neutral-600 transition-colors group-focus-within:text-neutral-300"
+              aria-hidden="true"
+            />
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="flex items-center gap-1.5 rounded-md bg-neutral-800 px-2.5 py-1 font-mono text-xs font-semibold text-neutral-300">
               <BookOpen size={13} aria-hidden="true" />
               {sortedChapters.length} capítulos
             </span>
             <span className="font-mono text-xs text-neutral-600">{source}</span>
-            <span className="font-mono text-xs text-neutral-700">pasta no disco</span>
             {titleOverride !== null && titleOverride !== data.manga.title && (
               <button
                 type="button"
