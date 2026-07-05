@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import type { Chapter } from '~/api/client'
 import type { Volume } from './VolumeCard'
+import { useIncremental } from '~/hooks/useIncremental'
 
 /** Faixa de capítulos de um volume, ex.: "Cap. 1 - 14" ou "Cap. 7". */
 function chapterRange(vol: Volume): string {
@@ -148,6 +149,14 @@ export function VolumeSelectModal({
     if (!q) return allVolumes
     return allVolumes.filter((v) => matchesQuery(v, q))
   }, [allVolumes, query])
+
+  // Renderiza as capas em lotes (scroll infinito) para aguentar coleções grandes
+  // como One Piece (100+ volumes) sem travar. Seleção/contagem seguem no total.
+  const {
+    visible: pagedVolumes,
+    sentinelRef: volSentinelRef,
+    hasMore: volHasMore,
+  } = useIncremental(visibleVolumes, 48)
 
   // Número real de cada volume (posição na lista completa), para o rótulo "VOLUME N".
   const volNumber = useMemo(
@@ -368,7 +377,7 @@ export function VolumeSelectModal({
         <div className="retro-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {/* Painel dos capítulos sem volume */}
           {remainingLeftovers.length > 0 && (
-            <div className="rounded-xl border border-neutral-700/60 bg-neutral-800/30 p-3.5">
+            <div className="rounded-xl border border-amber-700/40 bg-neutral-800/30 p-3.5">
               <div className="flex flex-wrap items-center gap-2">
                 <AlertTriangle
                   size={14}
@@ -509,7 +518,7 @@ export function VolumeSelectModal({
             </p>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-              {visibleVolumes.map((vol) => {
+              {pagedVolumes.map((vol) => {
                 const checked = selected.has(vol.id)
                 const num = volNumber.get(vol.id) ?? 0
                 const isExtra = extraIds.has(vol.id)
@@ -596,6 +605,15 @@ export function VolumeSelectModal({
                   </button>
                 )
               })}
+            </div>
+          )}
+          {/* Sentinela do scroll infinito das capas */}
+          {volHasMore && (
+            <div
+              ref={volSentinelRef}
+              className="py-3 text-center text-[11px] text-neutral-700"
+            >
+              carregando mais volumes…
             </div>
           )}
         </div>
