@@ -103,6 +103,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/rename", s.renameChapter)
 	s.mux.HandleFunc("PUT /api/downloads/{id}/tree/cover", s.putCover)
 	s.mux.HandleFunc("DELETE /api/downloads/{id}/tree/cover", s.deleteCover)
+	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/add", s.addTreePage)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/delete", s.deleteTreePage)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/reorder", s.reorderPages)
 	// Editor "Consertar da pasta" — mesma edição folder-first sobre uma pasta de
@@ -115,6 +116,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/folder/tree/rename", s.folderRename)
 	s.mux.HandleFunc("PUT /api/folder/tree/cover", s.folderPutCover)
 	s.mux.HandleFunc("DELETE /api/folder/tree/cover", s.folderDeleteCover)
+	s.mux.HandleFunc("POST /api/folder/tree/page/add", s.folderAddPage)
 	s.mux.HandleFunc("POST /api/folder/tree/page/delete", s.folderDeletePage)
 	s.mux.HandleFunc("POST /api/folder/tree/page/reorder", s.folderReorderPages)
 	// Montagens salvas — persistência dos volumes montados na tela da obra.
@@ -273,6 +275,27 @@ func (s *Server) putCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tree, err := s.deps.Editor.SetCover(r.PathValue("id"), req.Volume, req.Chapter, jpeg, req.Mode != "replace")
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+// addTreePage acrescenta uma imagem como nova última página do capítulo (o Mode
+// de coverReq é ignorado; aqui sempre é acréscimo no fim).
+func (s *Server) addTreePage(w http.ResponseWriter, r *http.Request) {
+	var req coverReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chapter == "" || req.Image == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	jpeg, err := decodeCover(req.Image)
+	if err != nil || len(jpeg) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid image")
+		return
+	}
+	tree, err := s.deps.Editor.AddPage(r.PathValue("id"), req.Volume, req.Chapter, jpeg)
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -439,6 +462,26 @@ func (s *Server) folderPutCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tree, err := s.deps.FolderEditor.SetCover(req.Path, req.Volume, req.Chapter, jpeg, req.Mode != "replace")
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+// folderAddPage acrescenta uma imagem como nova última página do capítulo.
+func (s *Server) folderAddPage(w http.ResponseWriter, r *http.Request) {
+	var req folderCoverReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chapter == "" || req.Image == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	jpeg, err := decodeCover(req.Image)
+	if err != nil || len(jpeg) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid image")
+		return
+	}
+	tree, err := s.deps.FolderEditor.AddPage(req.Path, req.Volume, req.Chapter, jpeg)
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -805,8 +848,9 @@ func (s *Server) removeJob(w http.ResponseWriter, r *http.Request) {
 func (s *Server) settingsPayload() map[string]any {
 	f := s.deps.Settings.VolumeFormat()
 	return map[string]any{
-		"downloadDir": s.deps.Settings.DownloadDir(),
-		"mangaFolder": s.deps.Settings.MangaFolder(),
+		"downloadDir":       s.deps.Settings.DownloadDir(),
+		"downloadDirExists": s.deps.Settings.DownloadDirAvailable(),
+		"mangaFolder":       s.deps.Settings.MangaFolder(),
 		"volumeNameFormat": map[string]any{
 			"prefix": f.Prefix,
 			"digits": f.Digits,

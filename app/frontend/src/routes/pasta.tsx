@@ -8,6 +8,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import {
+  AlertTriangle,
   ArrowLeft,
   BookOpen,
   Download,
@@ -21,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import { api, type LibraryManga } from '~/api/client'
+import { HelpButton } from '~/components/HelpButton'
 import { VolumeEditor } from '~/components/VolumeEditor'
 import { useIncremental } from '~/hooks/useIncremental'
 
@@ -38,6 +40,10 @@ function MeusMangasPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
+  // A pasta central persistida ainda existe no disco? (falso = SSD externo
+  // desconectado / pasta movida). Enquanto falso, mostramos um banner em vez de
+  // varrer (a varredura devolveria "0 obras" e confundiria com pasta vazia).
+  const [available, setAvailable] = useState(true)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<LibraryManga | null>(null)
   // Bumpa após fechar o editor para re-varrer a biblioteca (refletir as mudanças).
@@ -50,7 +56,9 @@ function MeusMangasPage() {
     api
       .getSettings()
       .then((s) => {
-        if (alive) setPath(s.downloadDir || '')
+        if (!alive) return
+        setPath(s.downloadDir || '')
+        setAvailable(s.downloadDirExists)
       })
       .catch(() => {})
     return () => {
@@ -60,7 +68,7 @@ function MeusMangasPage() {
 
   // (Re)varre a biblioteca sempre que a pasta muda ou após uma edição.
   useEffect(() => {
-    if (!path) {
+    if (!path || !available) {
       setMangas(null)
       return
     }
@@ -84,7 +92,7 @@ function MeusMangasPage() {
     return () => {
       alive = false
     }
-  }, [path, rev])
+  }, [path, rev, available])
 
   // Escolher a pasta central = escolher a pasta de downloads (unificado).
   async function pick() {
@@ -92,7 +100,10 @@ function MeusMangasPage() {
     setError(null)
     try {
       const s = await api.pickFolder()
-      if (s.downloadDir) setPath(s.downloadDir)
+      if (s.downloadDir) {
+        setPath(s.downloadDir)
+        setAvailable(s.downloadDirExists)
+      }
     } catch (e) {
       setError(errMsg(e))
     } finally {
@@ -138,18 +149,24 @@ function MeusMangasPage() {
           className="mt-0.5 shrink-0 text-sky-400"
           aria-hidden="true"
         />
-        <p className="text-xs leading-relaxed text-sky-200/70">
+        <p className="min-w-0 flex-1 text-xs leading-relaxed text-sky-200/70">
           Escolha a{' '}
-          <span className="font-semibold text-sky-200">pasta central</span> (a
-          que guarda TODAS as obras, ex.:{' '}
+          <span className="font-semibold text-sky-200">pasta central</span> que
+          guarda todas as suas obras — é a{' '}
+          <span className="font-semibold text-sky-200">
+            mesma pasta dos seus downloads
+          </span>
+          .
+        </p>
+        <HelpButton label="Como funciona a pasta central?" align="right">
+          É a pasta que contém uma subpasta por obra, ex.:{' '}
           <span className="font-mono">Mangas</span>, com{' '}
           <span className="font-mono">Mangas/Witch Hat Atelier</span>,{' '}
-          <span className="font-mono">Mangas/Sakamoto Days</span>…). É a{' '}
-          <span className="font-semibold text-sky-200">mesma pasta dos seus
-          downloads</span> — o que você baixa já aparece aqui. O app varre cada
-          subpasta como uma obra; nada é re-baixado, só lido e reorganizado.
+          <span className="font-mono">Mangas/Sakamoto Days</span>… Como é a mesma
+          pasta dos seus downloads, o que você baixa já aparece aqui. O app varre
+          cada subpasta como uma obra; nada é re-baixado, só lido e reorganizado.
           Funciona quando as pastas seguem o padrão do sistema.
-        </p>
+        </HelpButton>
       </div>
 
       {/* Seletor da pasta central */}
@@ -179,8 +196,43 @@ function MeusMangasPage() {
         </div>
       )}
 
+      {/* Pasta persistida sumiu (ex.: SSD externo desconectado) */}
+      {path && !available && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-amber-900/50 bg-amber-950/30 p-4">
+          <AlertTriangle
+            size={16}
+            className="mt-0.5 shrink-0 text-amber-400"
+            aria-hidden="true"
+          />
+          <div className="min-w-0 space-y-2">
+            <p className="text-sm font-semibold text-amber-200">
+              Pasta central indisponível
+            </p>
+            <p className="text-xs leading-relaxed text-amber-200/70">
+              A pasta salva não está acessível agora:{' '}
+              <span className="break-all font-mono text-amber-100">{path}</span>.
+              Se ela fica num HD/SSD externo, conecte-o e reabra esta tela — ou
+              escolha outra pasta central.
+            </p>
+            <button
+              type="button"
+              onClick={() => void pick()}
+              disabled={picking}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-700/60 bg-amber-900/30 px-3 py-1.5 text-xs font-medium text-amber-100 transition-colors hover:bg-amber-900/50 disabled:opacity-50"
+            >
+              {picking ? (
+                <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <FolderSearch size={13} aria-hidden="true" />
+              )}
+              Trocar de pasta…
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Resumo da biblioteca */}
-      {path && !error && (
+      {path && available && !error && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
           {loading ? (
             <div className="flex items-center gap-2 font-mono text-sm text-neutral-500">

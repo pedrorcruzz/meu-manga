@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ChevronLeft,
   ChevronRight,
+  FilePlus,
   FolderInput,
   Hash,
   ImagePlus,
@@ -160,6 +161,14 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
     if (!file) return
     const image = await fileToDataURL(file)
     void run(() => editor.setCover({ volume, chapter, image, mode }))
+  }
+
+  // Acrescenta uma imagem escolhida como nova última página SÓ deste capítulo.
+  async function addPageChapter(volume: string, chapter: string) {
+    const file = await pickImageFile()
+    if (!file) return
+    const image = await fileToDataURL(file)
+    void run(() => editor.addPage({ volume, chapter, image }))
   }
 
   function removeFirstPageChapter(volume: string, chapter: string) {
@@ -352,6 +361,9 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
           }
           onReplaceCover={() =>
             void setCoverChapter(preview.volume, preview.folder, 'replace')
+          }
+          onAddPage={() =>
+            void addPageChapter(preview.volume, preview.folder)
           }
           onRemoveFirstPage={() =>
             removeFirstPageChapter(preview.volume, preview.folder)
@@ -679,6 +691,7 @@ interface ChapterPreviewProps {
   /** Ações que afetam SÓ este capítulo (espelham as globais do volume). */
   onAddCover: () => void
   onReplaceCover: () => void
+  onAddPage: () => void
   onRemoveFirstPage: () => void
   onRemoveLastPage: () => void
   onClose: () => void
@@ -695,6 +708,7 @@ function ChapterPreview({
   onReorder,
   onAddCover,
   onReplaceCover,
+  onAddPage,
   onRemoveFirstPage,
   onRemoveLastPage,
   onClose,
@@ -791,6 +805,13 @@ function ChapterPreview({
             onClick={onReplaceCover}
             disabled={busy || pages === 0}
             title="Substitui a 001.jpg SÓ deste capítulo, sem empurrar as páginas"
+          />
+          <CoverButton
+            label="Adicionar página"
+            icon={<FilePlus size={11} aria-hidden="true" />}
+            onClick={onAddPage}
+            disabled={busy}
+            title="Escolhe uma imagem e a acrescenta como nova última página SÓ deste capítulo"
           />
           <CoverButton
             label="Remover 1ª pág."

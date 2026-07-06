@@ -11,6 +11,7 @@ type EditStore interface {
 	MoveChapter(manga, fromVol, toVol, chapterFolder string) error
 	RenameChapter(manga, volFolder, oldNumber, newNumber string) error
 	SetCover(manga, volFolder, chapterFolder string, jpeg []byte, insert bool) error
+	AddPage(manga, volFolder, chapterFolder string, jpeg []byte) error
 	RemoveCover(manga, volFolder, chapterFolder string) error
 	DeleteTreePage(manga, volFolder, chapterFolder, name string) error
 	ReorderPages(manga, volFolder, chapterFolder string, order []string) error
@@ -86,6 +87,18 @@ func (e *MangaEditor) SetCover(jobID, volFolder, chapterFolder string, jpeg []by
 		return domain.MangaTree{}, err
 	}
 	if err := e.store.SetCover(title, volFolder, chapterFolder, jpeg, insert); err != nil {
+		return domain.MangaTree{}, err
+	}
+	return e.store.ScanManga(title)
+}
+
+// AddPage acrescenta uma página ao final de um capítulo e devolve a árvore nova.
+func (e *MangaEditor) AddPage(jobID, volFolder, chapterFolder string, jpeg []byte) (domain.MangaTree, error) {
+	title, err := e.guard(jobID)
+	if err != nil {
+		return domain.MangaTree{}, err
+	}
+	if err := e.store.AddPage(title, volFolder, chapterFolder, jpeg); err != nil {
 		return domain.MangaTree{}, err
 	}
 	return e.store.ScanManga(title)

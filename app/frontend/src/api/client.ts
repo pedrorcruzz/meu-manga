@@ -222,6 +222,9 @@ export interface VolumeNameFormatDTO {
 
 export interface Settings {
   downloadDir: string
+  /** A pasta de download persistida ainda existe no disco? (falso = SSD externo
+   *  desconectado ou pasta movida/apagada). */
+  downloadDirExists: boolean
   /** Última pasta de mangá aberta no modo "Consertar da pasta" ("" se nenhuma). */
   mangaFolder: string
   volumeNameFormat: VolumeNameFormatDTO
@@ -251,6 +254,12 @@ export interface TreeEditorApi {
     chapter?: string
     image: string
     mode: 'insert' | 'replace'
+  }) => Promise<MangaTree>
+  /** Acrescenta uma imagem como nova última página de um capítulo. `image` é um data URL. */
+  addPage: (b: {
+    volume: string
+    chapter: string
+    image: string
   }) => Promise<MangaTree>
   /** `chapter` vazio/ausente = capa do volume (1º capítulo); preenchido = aquele capítulo. */
   removeCover: (volume: string, chapter?: string) => Promise<MangaTree>
@@ -511,6 +520,15 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
+  /** Acrescenta uma imagem como nova última página de um capítulo. `image` é um data URL. */
+  addPage: (
+    jobId: string,
+    body: { volume: string; chapter: string; image: string },
+  ) =>
+    req<MangaTree>(`/downloads/${encodeURIComponent(jobId)}/tree/page/add`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   /** Remove a 1ª página do alvo. `chapter` vazio = capa do volume (1º capítulo). */
   removeCover: (jobId: string, volume: string, chapter?: string) =>
     req<MangaTree>(
@@ -549,6 +567,7 @@ export const api = {
     moveChapter: (b) => api.moveChapter(jobId, b),
     renameChapter: (b) => api.renameChapter(jobId, b),
     setCover: (b) => api.setCover(jobId, b),
+    addPage: (b) => api.addPage(jobId, b),
     removeCover: (volume, chapter) => api.removeCover(jobId, volume, chapter),
     deleteTreePage: (b) => api.deleteTreePage(jobId, b),
     reorderPages: (b) => api.reorderPages(jobId, b),
@@ -590,6 +609,11 @@ export const api = {
     setCover: (b) =>
       req<MangaTree>('/folder/tree/cover', {
         method: 'PUT',
+        body: JSON.stringify({ path, ...b }),
+      }),
+    addPage: (b) =>
+      req<MangaTree>('/folder/tree/page/add', {
+        method: 'POST',
         body: JSON.stringify({ path, ...b }),
       }),
     removeCover: (volume, chapter) =>

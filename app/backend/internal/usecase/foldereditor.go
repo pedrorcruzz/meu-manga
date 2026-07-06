@@ -94,6 +94,13 @@ func (e *FolderEditor) SetCover(path, volFolder, chapterFolder string, jpeg []by
 	})
 }
 
+// AddPage acrescenta uma página ao final de um capítulo e devolve a árvore nova.
+func (e *FolderEditor) AddPage(path, volFolder, chapterFolder string, jpeg []byte) (domain.MangaTree, error) {
+	return e.mutate(path, func(st EditStore, manga string) error {
+		return st.AddPage(manga, volFolder, chapterFolder, jpeg)
+	})
+}
+
 // RemoveCover apaga a 1ª página do alvo e devolve a árvore atualizada.
 // chapterFolder vazio = capa do volume (1º capítulo); preenchido = aquele capítulo.
 func (e *FolderEditor) RemoveCover(path, volFolder, chapterFolder string) (domain.MangaTree, error) {

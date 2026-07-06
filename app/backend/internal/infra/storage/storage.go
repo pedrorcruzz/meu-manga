@@ -487,6 +487,25 @@ func (s *Store) SetCover(manga, volFolder, chapterFolder string, jpeg []byte, in
 	return os.WriteFile(filepath.Join(dir, "001.jpg"), jpeg, 0o644)
 }
 
+// AddPage acrescenta uma nova página ao FINAL do capítulo (00N+1.jpg), sem
+// mexer nas existentes — o oposto de SetCover, que entra na 001.jpg. Endereçado
+// por nomes de pasta, como o resto do editor. Normaliza a numeração antes
+// (renumber) para o índice do fim ser exato. Rejeita segmentos inseguros.
+func (s *Store) AddPage(manga, volFolder, chapterFolder string, jpeg []byte) error {
+	if !safeSeg(chapterFolder) {
+		return os.ErrNotExist
+	}
+	if volFolder != "" && !safeSeg(volFolder) {
+		return os.ErrNotExist
+	}
+	dir := filepath.Join(s.subdir(manga, volFolder), chapterFolder)
+	if err := renumber(dir); err != nil {
+		return err
+	}
+	next := len(imagesIn(dir)) + 1
+	return os.WriteFile(filepath.Join(dir, fmt.Sprintf("%03d.jpg", next)), jpeg, 0o644)
+}
+
 // RemoveCover apaga a 1ª página do capítulo-alvo (ver coverChapterDir) e
 // renumera o restante. Sem páginas → ErrNoCover.
 func (s *Store) RemoveCover(manga, volFolder, chapterFolder string) error {

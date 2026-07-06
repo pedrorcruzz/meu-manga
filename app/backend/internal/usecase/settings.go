@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"encoding/json"
+	"os"
 )
 
 // DirStore is the storage root the settings can read and change.
@@ -68,6 +69,19 @@ func (s *Settings) DownloadDir() string { return s.store.Root() }
 
 // SetDownloadDir changes the download root (created if missing).
 func (s *Settings) SetDownloadDir(dir string) error { return s.store.SetRoot(dir) }
+
+// DownloadDirAvailable reporta se a pasta de download persistida ainda existe no
+// disco (falso quando, p.ex., um SSD externo foi desconectado ou a pasta foi
+// movida/apagada). A biblioteca usa isto para avisar que a pasta sumiu em vez de
+// mostrar "0 obras".
+func (s *Settings) DownloadDirAvailable() bool {
+	dir := s.store.Root()
+	if dir == "" {
+		return false
+	}
+	info, err := os.Stat(dir)
+	return err == nil && info.IsDir()
+}
 
 // PickDownloadDir opens the native folder chooser and, if confirmed, applies it.
 // Retorna o caminho escolhido ("" se cancelado).
