@@ -24,6 +24,8 @@ export default defineConfig({
       srcDirectory: 'src',
     }),
     viteReact(),
-    nitro(),
+    // exFAT (SSD externo) cria arquivos AppleDouble "._*" ao lado dos assets;
+    // o copyPublicAssets do Nitro quebra tentando chmod neles. Ignora todos.
+    nitro({ ignore: ['**/._*'] }),
   ],
 })
