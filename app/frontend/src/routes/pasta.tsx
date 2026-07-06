@@ -44,7 +44,6 @@ function MeusMangasPage() {
   // desconectado / pasta movida). Enquanto falso, mostramos um banner em vez de
   // varrer (a varredura devolveria "0 obras" e confundiria com pasta vazia).
   const [available, setAvailable] = useState(true)
-  const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<LibraryManga | null>(null)
   // Bumpa após fechar o editor para re-varrer a biblioteca (refletir as mudanças).
   const [rev, setRev] = useState(0)
@@ -231,16 +230,16 @@ function MeusMangasPage() {
         </div>
       )}
 
-      {/* Resumo da biblioteca */}
+      {/* Biblioteca inline: as obras aparecem aqui mesmo, com scroll infinito */}
       {path && available && !error && (
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
+        <>
           {loading ? (
-            <div className="flex items-center gap-2 font-mono text-sm text-neutral-500">
+            <div className="flex items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 font-mono text-sm text-neutral-500">
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
               Varrendo a biblioteca…
             </div>
           ) : empty ? (
-            <div className="space-y-3 py-2 text-center">
+            <div className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 py-2 text-center">
               <p className="text-sm text-neutral-500">
                 Nenhuma obra encontrada nesta pasta. Confira se você apontou a
                 pasta central (a que contém as pastas das obras).
@@ -254,40 +253,12 @@ function MeusMangasPage() {
               </Link>
             </div>
           ) : mangas ? (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-              <div className="flex items-center gap-2">
-                <BookOpen
-                  size={16}
-                  className="shrink-0 text-violet-300"
-                  aria-hidden="true"
-                />
-                <span className="font-semibold text-neutral-100">
-                  {count} {count === 1 ? 'obra' : 'obras'} na biblioteca
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(true)}
-                className="ml-auto flex items-center gap-1.5 rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-white"
-              >
-                <Library size={14} aria-hidden="true" />
-                Abrir biblioteca
-              </button>
-            </div>
+            <LibraryGrid mangas={mangas} onFix={(m) => setEditing(m)} />
           ) : null}
-        </div>
+        </>
       )}
 
-      {/* Popup 100vh com a biblioteca (scroll infinito) */}
-      {open && mangas && (
-        <LibraryModal
-          mangas={mangas}
-          onClose={() => setOpen(false)}
-          onFix={(m) => setEditing(m)}
-        />
-      )}
-
-      {/* Editor "Consertar volumes" sobre a obra escolhida (stacka sobre o popup) */}
+      {/* Editor "Consertar volumes" sobre a obra escolhida */}
       {editing && editor && (
         <VolumeEditor
           editor={editor}
@@ -302,15 +273,13 @@ function MeusMangasPage() {
   )
 }
 
-// ── Popup 100vh: lista todas as obras com scroll infinito ─────────────────────
+// ── Biblioteca inline: lista todas as obras aqui mesmo, com scroll infinito ────
 
-function LibraryModal({
+function LibraryGrid({
   mangas,
-  onClose,
   onFix,
 }: {
   mangas: LibraryManga[]
-  onClose: () => void
   onFix: (m: LibraryManga) => void
 }) {
   const [query, setQuery] = useState('')
@@ -320,45 +289,25 @@ function LibraryModal({
     return mangas.filter((m) => m.manga.toLowerCase().includes(q))
   }, [mangas, query])
 
+  // O scroll infinito acompanha o scroll da própria página (sem limite de 100vh).
   const { visible, sentinelRef, hasMore } = useIncremental(filtered, 48)
 
-  // Fecha com Escape.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   return (
-    <div className="fixed inset-0 z-40 flex h-screen flex-col bg-neutral-950/95 backdrop-blur">
-      {/* Cabeçalho */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-neutral-800/60 px-4 py-3 sm:px-6">
-        <Library size={18} className="text-violet-300" aria-hidden="true" />
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-neutral-100">
-            Biblioteca — Meus Mangás
-          </p>
-          <p className="truncate text-xs text-neutral-500">
-            {mangas.length} {mangas.length === 1 ? 'obra' : 'obras'} · escolha
-            qual consertar
-          </p>
+    <div className="space-y-4">
+      {/* Contagem + busca */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+        <div className="flex items-center gap-2">
+          <BookOpen
+            size={16}
+            className="shrink-0 text-violet-300"
+            aria-hidden="true"
+          />
+          <span className="text-sm font-semibold text-neutral-100">
+            {mangas.length} {mangas.length === 1 ? 'obra' : 'obras'} na
+            biblioteca
+          </span>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Fechar biblioteca"
-          className="ml-auto flex items-center gap-1.5 rounded-lg border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:bg-neutral-800"
-        >
-          <X size={15} aria-hidden="true" />
-          Fechar
-        </button>
-      </div>
-
-      {/* Busca */}
-      <div className="shrink-0 px-4 py-3 sm:px-6">
-        <div className="relative mx-auto max-w-md">
+        <div className="relative ml-auto w-full max-w-xs">
           <Search
             size={14}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"
@@ -385,28 +334,26 @@ function LibraryModal({
         </div>
       </div>
 
-      {/* Grade com scroll infinito (ocupa o resto da altura) */}
-      <div className="retro-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 sm:px-6">
-        {filtered.length === 0 ? (
-          <p className="py-16 text-center text-sm text-neutral-600">
-            Nenhuma obra encontrada para “{query}”.
-          </p>
-        ) : (
-          <div className="mx-auto grid max-w-6xl grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {visible.map((m) => (
-              <MangaTile key={m.path} manga={m} onFix={() => onFix(m)} />
-            ))}
-          </div>
-        )}
-        {hasMore && (
-          <div
-            ref={sentinelRef}
-            className="py-4 text-center font-mono text-[11px] text-neutral-700"
-          >
-            carregando mais obras…
-          </div>
-        )}
-      </div>
+      {/* Grade com scroll infinito (na própria página) */}
+      {filtered.length === 0 ? (
+        <p className="py-16 text-center text-sm text-neutral-600">
+          Nenhuma obra encontrada para “{query}”.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          {visible.map((m) => (
+            <MangaTile key={m.path} manga={m} onFix={() => onFix(m)} />
+          ))}
+        </div>
+      )}
+      {hasMore && (
+        <div
+          ref={sentinelRef}
+          className="py-4 text-center font-mono text-[11px] text-neutral-700"
+        >
+          carregando mais obras…
+        </div>
+      )}
     </div>
   )
 }
