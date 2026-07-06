@@ -237,28 +237,12 @@ function DownloadsPage() {
     return true
   })
 
-  return (
-    <div className="space-y-5">
-      {/* Navegação de volta */}
-      <Link
-        to="/"
-        className="flex w-fit items-center gap-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-200"
-      >
-        <ArrowLeft size={15} aria-hidden="true" />
-        Voltar
-      </Link>
+  const hasPending = pending != null && pending.volumes.length > 0
 
-      {/* Seleção de volumes recém-montados: escolher o que baixar */}
-      {pending && pending.volumes.length > 0 && (
-        <PendingVolumesPanel
-          pending={pending}
-          busy={staging}
-          onDownloadVolume={(v) => void startVolumes([v])}
-          onDownloadAll={() => void startVolumes(pending.volumes)}
-          onDiscard={() => setPending(null)}
-        />
-      )}
-
+  // Coluna dos downloads (pasta + lista). Fica sozinha (largura cheia) quando não
+  // há volumes para escolher, ou lado a lado com o painel de seleção quando há.
+  const downloadsColumn = (
+    <div className="min-w-0 space-y-5">
       {/* Pasta de downloads */}
       <DownloadFolderSection />
 
@@ -327,17 +311,58 @@ function DownloadsPage() {
           </div>
         </div>
       )}
+    </div>
+  )
 
-      {/* Popup de confirmação da nossa interface (sem alert do browser) */}
-      {confirmState && (
-        <ConfirmDialog
-          title={confirmState.title}
-          message={confirmState.message}
-          confirmLabel={confirmState.confirmLabel}
-          onConfirm={confirmState.onConfirm}
-          onCancel={() => setConfirmState(null)}
-        />
-      )}
+  return (
+    // Com volumes pendentes, abrimos a página em tela cheia (full-bleed) e a
+    // recentramos em max-w-7xl para o layout 50/50 não ficar estreito. Sem eles,
+    // a página segue na largura padrão (max-w-5xl do <main>).
+    <div
+      className={
+        hasPending
+          ? 'relative left-1/2 w-screen -translate-x-1/2 px-4 sm:px-6'
+          : ''
+      }
+    >
+      <div className={`mx-auto space-y-5 ${hasPending ? 'max-w-7xl' : ''}`}>
+        {/* Navegação de volta */}
+        <Link
+          to="/"
+          className="flex w-fit items-center gap-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-200"
+        >
+          <ArrowLeft size={15} aria-hidden="true" />
+          Voltar
+        </Link>
+
+        {hasPending ? (
+          <div className="grid items-start gap-6 lg:grid-cols-2">
+            {/* Esquerda: seleção de volumes recém-montados */}
+            <PendingVolumesPanel
+              pending={pending}
+              busy={staging}
+              onDownloadVolume={(v) => void startVolumes([v])}
+              onDownloadAll={() => void startVolumes(pending.volumes)}
+              onDiscard={() => setPending(null)}
+            />
+            {/* Direita: downloads */}
+            {downloadsColumn}
+          </div>
+        ) : (
+          downloadsColumn
+        )}
+
+        {/* Popup de confirmação da nossa interface (sem alert do browser) */}
+        {confirmState && (
+          <ConfirmDialog
+            title={confirmState.title}
+            message={confirmState.message}
+            confirmLabel={confirmState.confirmLabel}
+            onConfirm={confirmState.onConfirm}
+            onCancel={() => setConfirmState(null)}
+          />
+        )}
+      </div>
     </div>
   )
 }
@@ -542,7 +567,7 @@ function PendingVolumesPanel({
             Nenhum volume encontrado para “{query}”.
           </p>
         ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {visible.map((v) => (
           <div
             key={v.name}
