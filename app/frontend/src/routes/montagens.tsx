@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -7,10 +7,26 @@ import {
   Layers,
   Trash2,
 } from 'lucide-react'
-import { api, type MountSummary } from '~/api/client'
+import {
+  api,
+  type MangaTree,
+  type MountSummary,
+} from '~/api/client'
 import { ConfirmDialog } from '~/components/ConfirmDialog'
 import { useAsync } from '~/hooks/useAsync'
 import { thumbSrc } from '~/utils/img'
+
+/** Primeira capa real no disco da coleção (1ª página do 1º capítulo disponível),
+ *  para o card exibir a capa baixada em vez da miniatura online. */
+function firstDiskCover(tree: MangaTree | null, jobId: string): string | null {
+  if (!tree || !jobId) return null
+  for (const vol of tree.volumes) {
+    const chap = vol.chapters.find((c) => c.firstPage)
+    if (chap)
+      return api.mangaPageUrl(jobId, vol.folder, chap.folder, chap.firstPage)
+  }
+  return null
+}
 
 export const Route = createFileRoute('/montagens')({
   component: MontagensPage,
@@ -32,6 +48,8 @@ function formatDate(iso: string): string {
 function MontagensPage() {
   const [tick, setTick] = useState(0)
   const { data, error } = useAsync(() => api.listMounts(), [tick])
+  // Downloads existentes: usados para achar a capa real no disco de cada mangá.
+  const { data: jobs } = useAsync(() => api.listJobs(), [tick])
   const [confirmState, setConfirmState] = useState<{
     title: string
     message: React.ReactNode
@@ -40,6 +58,18 @@ function MontagensPage() {
   } | null>(null)
 
   const list = data ?? []
+
+  // source::slug → jobId de um download que já baixou capítulos. É dele que sai
+  // a capa real no disco de cada montagem.
+  const jobByManga = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const j of jobs ?? []) {
+      if (j.completedChapters <= 0) continue
+      const key = `${j.source}::${j.slug || j.title}`
+      if (!m.has(key)) m.set(key, j.jobId)
+    }
+    return m
+  }, [jobs])
 
   function remove(m: MountSummary) {
     setConfirmState({
@@ -162,6 +192,7 @@ function MontagensPage() {
             <MountCard
               key={`${m.source}-${m.slug}`}
               mount={m}
+              jobId={jobByManga.get(`${m.source}::${m.slug || m.title}`)}
               onRemove={() => remove(m)}
             />
           ))}
@@ -183,12 +214,22 @@ function MontagensPage() {
 
 function MountCard({
   mount,
+  jobId,
   onRemove,
 }: {
   mount: MountSummary
+  /** Download correspondente (se houver) para exibir a capa real do disco. */
+  jobId?: string
   onRemove: () => void
 }) {
-  const cover = thumbSrc(mount.source, mount.thumbUrl)
+  // Lê a árvore do download para pegar a capa baixada; enquanto carrega (ou se
+  // não houver download), cai na miniatura online.
+  const { data: tree } = useAsync(
+    () => (jobId ? api.getMangaTree(jobId) : Promise.resolve(null)),
+    [jobId],
+  )
+  const cover =
+    firstDiskCover(tree, jobId ?? '') ?? thumbSrc(mount.source, mount.thumbUrl)
   return (
     <div className="flex gap-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50 p-3">
       {/* Capa */}

@@ -83,6 +83,9 @@ func main() {
 		usecase.WithChapterDelay(cfg.ChapterDelay),
 		usecase.WithRetention(cfg.HistoryRetention))
 	settings := usecase.NewSettings(store, dialog.New(), history)
+	// reaplica a pasta de download escolhida pelo usuário e persistida no SQLite
+	// (sobrepõe o padrão do config), para sobreviver a fechar/reabrir o app
+	settings.RestoreDownloadDir()
 	// editor "Consertar volumes": lê/edita a pasta em disco (mesmo store), com
 	// guard contra corrida com downloads em andamento (via o registro de jobs).
 	editor := usecase.NewMangaEditor(store, downloader)

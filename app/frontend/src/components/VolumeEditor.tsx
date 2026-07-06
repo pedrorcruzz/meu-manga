@@ -36,6 +36,12 @@ interface VolumeEditorProps {
    * todos. Ausente → mostra todos (ex.: aberto por "Meus Mangás").
    */
   focusVolume?: number
+  /**
+   * Modo somente-leitura: nenhuma ação de conserto/edição aparece (sem mover,
+   * capa, renumerar, apagar/reordenar páginas). Serve como preview puro do que
+   * já está no disco — capítulos e páginas continuam abrindo em tela cheia.
+   */
+  readOnly?: boolean
   onClose: () => void
 }
 
@@ -77,6 +83,7 @@ export function VolumeEditor({
   editor,
   title,
   focusVolume,
+  readOnly = false,
   onClose,
 }: VolumeEditorProps) {
   const [tree, setTree] = useState<MangaTree | null>(null)
@@ -253,7 +260,7 @@ export function VolumeEditor({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`Consertar volumes de ${title}`}
+        aria-label={`${readOnly ? 'Visualizar' : 'Consertar'} volumes de ${title}`}
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
         onClick={(e) => {
           if (e.target === e.currentTarget) onClose()
@@ -269,7 +276,7 @@ export function VolumeEditor({
                   className="text-neutral-400"
                   aria-hidden="true"
                 />
-                Consertar volumes
+                {readOnly ? 'Visualizar volume' : 'Consertar volumes'}
               </h2>
               <p className="truncate text-xs text-neutral-500">{title}</p>
             </div>
@@ -293,17 +300,25 @@ export function VolumeEditor({
 
           {/* Dica */}
           <div className="border-b border-neutral-800 bg-neutral-950/40 px-4 py-2.5">
-            <p className="text-xs leading-relaxed text-neutral-500">
-              Arraste um capítulo para outro volume para movê-lo. Os botões{' '}
-              <span className="text-neutral-400">Volume inteiro</span> no topo
-              de cada volume mexem na capa/páginas do volume (1º/último
-              capítulo).{' '}
-              <span className="text-neutral-400">Abra um capítulo</span> para
-              reordenar/apagar páginas ou mexer na capa e nas 1ª/última páginas{' '}
-              <span className="text-neutral-400">só dele</span>. As páginas se
-              renumeram sozinhas. Nada é re-baixado — só a pasta em disco é
-              alterada.
-            </p>
+            {readOnly ? (
+              <p className="text-xs leading-relaxed text-neutral-500">
+                <span className="text-neutral-400">Abra um capítulo</span> para
+                ver as páginas em tela cheia. É só um preview do que está no
+                disco — nada aqui é alterado.
+              </p>
+            ) : (
+              <p className="text-xs leading-relaxed text-neutral-500">
+                Arraste um capítulo para outro volume para movê-lo. Os botões{' '}
+                <span className="text-neutral-400">Volume inteiro</span> no topo
+                de cada volume mexem na capa/páginas do volume (1º/último
+                capítulo).{' '}
+                <span className="text-neutral-400">Abra um capítulo</span> para
+                reordenar/apagar páginas ou mexer na capa e nas 1ª/última
+                páginas <span className="text-neutral-400">só dele</span>. As
+                páginas se renumeram sozinhas. Nada é re-baixado — só a pasta em
+                disco é alterada.
+              </p>
+            )}
           </div>
 
           {/* Busca + escopo (só quando há volumes) */}
@@ -413,6 +428,7 @@ export function VolumeEditor({
                     onRename={(oldN, newN) => rename(vol.folder, oldN, newN)}
                     busy={busy}
                     rev={rev}
+                    readOnly={readOnly}
                   />
                 ))}
 
@@ -443,6 +459,7 @@ export function VolumeEditor({
                     onRename={(oldN, newN) => rename('', oldN, newN)}
                     busy={busy}
                     rev={rev}
+                    readOnly={readOnly}
                   />
                 )}
               </div>
@@ -471,6 +488,7 @@ export function VolumeEditor({
           pages={findChapter(tree, preview.volume, preview.folder)?.pages ?? 0}
           rev={rev}
           busy={busy}
+          readOnly={readOnly}
           onOpenLightbox={setLightbox}
           onDeletePage={(name) =>
             deletePage(preview.volume, preview.folder, name)
@@ -535,6 +553,8 @@ interface VolumeSectionProps {
   busy: boolean
   /** Contador de mutações para furar o cache de <img> das miniaturas. */
   rev: number
+  /** Preview puro: esconde os controles de conserto (mover/capa/renumerar). */
+  readOnly?: boolean
   /** Seção de capítulos soltos: sem controles de capa. */
   loose?: boolean
   onAddCover?: () => void
@@ -555,13 +575,14 @@ function VolumeSection({
   onRename,
   busy,
   rev,
+  readOnly,
   loose,
   onAddCover,
   onReplaceCover,
   onRemoveCover,
   onRemoveLastPage,
 }: VolumeSectionProps) {
-  const dragging = drag != null
+  const dragging = drag != null && !readOnly
   return (
     <div
       onDragOver={(e) => {
@@ -591,7 +612,7 @@ function VolumeSection({
         <span className="font-mono text-[11px] text-neutral-600">
           {vol.chapters.length} cap.
         </span>
-        {!loose && (
+        {!loose && !readOnly && (
           <div className="ml-auto flex flex-wrap items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/40 px-2 py-1">
             <span className="mr-0.5 font-mono text-[10px] uppercase tracking-wider text-neutral-500">
               Volume inteiro
@@ -648,6 +669,7 @@ function VolumeSection({
               onRename={(newN) => onRename(ch.number, newN)}
               busy={busy}
               rev={rev}
+              readOnly={readOnly}
             />
           ))}
         </div>
@@ -695,6 +717,7 @@ interface ChapterCardProps {
   onRename: (newNumber: string) => void
   busy: boolean
   rev: number
+  readOnly?: boolean
 }
 
 function ChapterCard({
@@ -707,6 +730,7 @@ function ChapterCard({
   onRename,
   busy,
   rev,
+  readOnly,
 }: ChapterCardProps) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(ch.number)
@@ -723,8 +747,9 @@ function ChapterCard({
 
   return (
     <div
-      draggable={!editing}
+      draggable={!editing && !readOnly}
       onDragStart={(e) => {
+        if (readOnly) return
         e.dataTransfer.effectAllowed = 'move'
         onDragStart()
       }}
@@ -780,19 +805,21 @@ function ChapterCard({
               Cap.{' '}
               <span className="font-medium text-neutral-100">{ch.number}</span>
             </span>
-            <button
-              type="button"
-              onClick={() => {
-                setValue(ch.number)
-                setEditing(true)
-              }}
-              disabled={busy}
-              aria-label={`Corrigir o número do capítulo ${ch.number}`}
-              title="Corrigir o número do capítulo"
-              className="rounded p-0.5 text-neutral-500 opacity-0 transition hover:bg-neutral-800 hover:text-neutral-200 group-hover:opacity-100 disabled:opacity-40"
-            >
-              <Hash size={12} aria-hidden="true" />
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => {
+                  setValue(ch.number)
+                  setEditing(true)
+                }}
+                disabled={busy}
+                aria-label={`Corrigir o número do capítulo ${ch.number}`}
+                title="Corrigir o número do capítulo"
+                className="rounded p-0.5 text-neutral-500 opacity-0 transition hover:bg-neutral-800 hover:text-neutral-200 group-hover:opacity-100 disabled:opacity-40"
+              >
+                <Hash size={12} aria-hidden="true" />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -810,6 +837,8 @@ interface ChapterPreviewProps {
   /** Contador de mutações para furar o cache de <img>. */
   rev: number
   busy: boolean
+  /** Preview puro: só ampliar/filtrar páginas, sem reordenar/apagar/capa. */
+  readOnly?: boolean
   onOpenLightbox: (name: string) => void
   onDeletePage: (name: string) => void
   onReorder: (order: string[]) => void
@@ -828,6 +857,7 @@ function ChapterPreview({
   pages,
   rev,
   busy,
+  readOnly,
   onOpenLightbox,
   onDeletePage,
   onReorder,
@@ -894,8 +924,10 @@ function ChapterPreview({
               Capítulo {preview.number}
             </h3>
             <p className="text-xs text-neutral-500">
-              {pages} página{pages !== 1 ? 's' : ''} · arraste para reordenar,
-              use as setas ou apague
+              {pages} página{pages !== 1 ? 's' : ''}
+              {readOnly
+                ? ' · clique para ampliar'
+                : ' · arraste para reordenar, use as setas ou apague'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -916,6 +948,7 @@ function ChapterPreview({
           </div>
         </div>
         {/* Ações que afetam SÓ este capítulo (espelham as globais do volume) */}
+        {!readOnly && (
         <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-800 bg-neutral-950/40 px-4 py-2.5">
           <span className="mr-1 font-mono text-[10px] uppercase tracking-wider text-neutral-500">
             Só este capítulo
@@ -955,6 +988,7 @@ function ChapterPreview({
             title="Apaga a última página SÓ deste capítulo"
           />
         </div>
+        )}
 
         {/* Busca por número da página */}
         {names.length > 0 && (
@@ -1002,8 +1036,9 @@ function ChapterPreview({
                 matchesQuery(i) ? (
                   <div
                     key={name}
-                    draggable={!busy}
+                    draggable={!busy && !readOnly}
                     onDragStart={(e) => {
+                      if (readOnly) return
                       e.dataTransfer.effectAllowed = 'move'
                       setDragIdx(i)
                     }}
@@ -1024,7 +1059,7 @@ function ChapterPreview({
                         ? 'border-sky-500 ring-2 ring-sky-500'
                         : 'border-neutral-800'
                     } ${dragIdx === i ? 'opacity-40' : ''} ${
-                      busy ? '' : 'cursor-grab active:cursor-grabbing'
+                      busy || readOnly ? '' : 'cursor-grab active:cursor-grabbing'
                     }`}
                   >
                     <button
@@ -1045,6 +1080,7 @@ function ChapterPreview({
                       {i + 1}
                     </span>
                     {/* Controles: mover ‹ ›, apagar */}
+                    {!readOnly && (
                     <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-t from-black/80 to-transparent p-1 opacity-0 transition group-hover:opacity-100">
                       <PageBtn
                         label={`Mover página ${name} para trás`}
@@ -1069,6 +1105,7 @@ function ChapterPreview({
                         <Trash2 size={12} aria-hidden="true" />
                       </PageBtn>
                     </div>
+                    )}
                   </div>
                 ) : null,
               )}

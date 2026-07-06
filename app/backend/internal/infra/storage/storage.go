@@ -38,6 +38,17 @@ func (s *Store) SetRoot(dir string) error {
 	return nil
 }
 
+// RestoreRoot aponta a raiz para dir SEM criá-la no disco (ao contrário de
+// SetRoot). Usado no boot para reaplicar a pasta persistida pelo usuário: se o
+// caminho não existir (ex.: SSD externo desconectado), a raiz ainda passa a
+// apontar para lá — assim DownloadDirAvailable devolve false e a UI avisa
+// "indisponível", em vez de MkdirAll criar uma pasta fantasma no disco interno.
+func (s *Store) RestoreRoot(dir string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.root = dir
+}
+
 // chapterPath computes the folder path for a work/volume/chapter WITHOUT
 // creating it (read-only). Layout: <manga>/<manga> <volume>/<chapter>/. Com
 // volume vazio, omite o nível do volume: <manga>/<chapter>/.

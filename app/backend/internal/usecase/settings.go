@@ -10,6 +10,9 @@ import (
 type DirStore interface {
 	Root() string
 	SetRoot(dir string) error
+	// RestoreRoot aponta a raiz sem criá-la no disco (reaplicar a pasta
+	// persistida no boot, mesmo que ela esteja indisponível no momento).
+	RestoreRoot(dir string)
 }
 
 // FolderPicker opens a native folder chooser starting at startDir.
@@ -48,6 +51,7 @@ func (f VolumeFormat) valid() bool {
 const (
 	volumeFormatKey = "volume_name_format"
 	mangaFolderKey  = "manga_folder"
+	downloadDirKey  = "download_dir"
 )
 
 // Settings manages the download directory preference plus small persisted
@@ -67,8 +71,40 @@ func NewSettings(store DirStore, picker FolderPicker, kv SettingsKV) *Settings {
 // DownloadDir returns the current download root.
 func (s *Settings) DownloadDir() string { return s.store.Root() }
 
-// SetDownloadDir changes the download root (created if missing).
-func (s *Settings) SetDownloadDir(dir string) error { return s.store.SetRoot(dir) }
+// SetDownloadDir changes the download root (created if missing) and persiste a
+// escolha no SQLite para sobreviver ao fechar o app.
+func (s *Settings) SetDownloadDir(dir string) error {
+	if err := s.store.SetRoot(dir); err != nil {
+		return err
+	}
+	s.persistDownloadDir(dir)
+	return nil
+}
+
+// persistDownloadDir grava a pasta de download escolhida no SQLite (best-effort:
+// se o kv falhar/for nil, a raiz em memória ainda vale para esta sessão).
+func (s *Settings) persistDownloadDir(dir string) {
+	if s.kv == nil {
+		return
+	}
+	_ = s.kv.SetSetting(downloadDirKey, dir)
+}
+
+// RestoreDownloadDir reaplica a última pasta de download escolhida pelo usuário e
+// persistida no SQLite. Chamado uma vez no boot (depois do kv disponível), ANTES
+// de servir requisições. Sem valor persistido, mantém o padrão do config
+// (~/Downloads ou MM_DOWNLOAD_DIR). Não recria a pasta: se ela sumiu (SSD
+// desconectado), a raiz ainda aponta para lá para a UI avisar "indisponível".
+func (s *Settings) RestoreDownloadDir() {
+	if s.kv == nil {
+		return
+	}
+	v, ok, err := s.kv.GetSetting(downloadDirKey)
+	if err != nil || !ok || v == "" {
+		return
+	}
+	s.store.RestoreRoot(v)
+}
 
 // DownloadDirAvailable reporta se a pasta de download persistida ainda existe no
 // disco (falso quando, p.ex., um SSD externo foi desconectado ou a pasta foi
@@ -93,6 +129,7 @@ func (s *Settings) PickDownloadDir(ctx context.Context) (string, error) {
 	if err := s.store.SetRoot(dir); err != nil {
 		return "", err
 	}
+	s.persistDownloadDir(dir)
 	return dir, nil
 }
 

@@ -36,6 +36,7 @@ import {
   type JobStatus,
   type JobSummary,
   type MangaTree,
+  type TreeEditorApi,
   type VolumeInput,
 } from '~/api/client'
 import { useDownloadEvents } from '~/api/events'
@@ -213,6 +214,13 @@ function DownloadsPage() {
   const diskCovers = useMemo(
     () => diskCoversFromTree(pendingTree, pendingJob?.jobId ?? ''),
     [pendingTree, pendingJob?.jobId],
+  )
+
+  // Adaptador do editor (só-leitura) para o preview de um volume já baixado.
+  // A árvore de qualquer job do mangá cobre a coleção inteira no disco.
+  const pendingEditor = useMemo<TreeEditorApi | null>(
+    () => (pendingJob ? api.jobEditor(pendingJob.jobId) : null),
+    [pendingJob?.jobId],
   )
 
   // Status de cada volume pendente. Base: volumes já presentes na pasta central
@@ -490,6 +498,7 @@ function DownloadsPage() {
               busy={staging}
               statuses={volumeStatuses}
               diskCovers={diskCovers}
+              editor={pendingEditor}
               nameFormat={nameFormat}
               onChangeFormat={changeFormat}
               onDownloadVolume={(v) => void startVolumes([v])}
@@ -560,6 +569,7 @@ function PendingVolumesPanel({
   busy,
   statuses,
   diskCovers,
+  editor,
   nameFormat,
   onChangeFormat,
   onDownloadVolume,
@@ -571,12 +581,16 @@ function PendingVolumesPanel({
   statuses: Record<string, VolumeDlStatus>
   // Número do volume → capa real no disco (para volumes já baixados).
   diskCovers: Record<number, string>
+  // Adaptador (só-leitura) para o preview de um volume baixado. null = sem job.
+  editor: TreeEditorApi | null
   nameFormat: VolumeNameFormat
   onChangeFormat: (fmt: VolumeNameFormat) => void
   onDownloadVolume: (v: VolumeInput) => void
   onDownloadAll: () => void
   onDiscard: () => void
 }) {
+  // Volume aberto no preview só-leitura (número do volume). null = fechado.
+  const [previewVolume, setPreviewVolume] = useState<number | null>(null)
   const totalChapters = pending.volumes.reduce(
     (s, v) => s + v.chapters.length,
     0,
@@ -627,6 +641,7 @@ function PendingVolumesPanel({
   const { visible, sentinelRef, hasMore } = useIncremental(filtered, 48)
 
   return (
+    <>
     <div className="flex flex-col gap-3 rounded-xl border border-violet-800/40 bg-violet-950/20 p-4 lg:h-full lg:min-h-0">
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-center gap-3">
@@ -821,13 +836,13 @@ function PendingVolumesPanel({
         {(
           [
             { key: 'all', label: 'Todos', count: counts.all },
+            { key: 'done', label: 'Baixados', count: counts.done },
             { key: 'idle', label: 'Não baixados', count: counts.idle },
             {
               key: 'downloading',
               label: 'Baixando',
               count: counts.downloading,
             },
-            { key: 'done', label: 'Baixados', count: counts.done },
           ] as const
         ).map((f) => (
           <button
@@ -871,7 +886,7 @@ function PendingVolumesPanel({
                     : 'Nenhum volume.'}
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
             {visible.map((v) => {
               const s = statusOf(v)
               const done = s === 'done'
@@ -882,6 +897,8 @@ function PendingVolumesPanel({
               const cover =
                 (done && num != null ? diskCovers[num] : undefined) ??
                 v.coverImage
+              // Volume baixado pode ser aberto no preview (só-leitura).
+              const canPreview = done && editor != null && num != null
               return (
                 <div
                   key={v.name}
@@ -921,15 +938,30 @@ function PendingVolumesPanel({
                       </div>
                     )}
                     <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
+                    {/* Volume baixado: capa clicável abre o preview só-leitura */}
+                    {canPreview && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewVolume(num)}
+                        aria-label={`Ver páginas de ${v.name}`}
+                        title="Ver páginas (preview)"
+                        className="group absolute inset-0 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400"
+                      >
+                        <span className="flex items-center gap-1 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                          <Eye size={12} aria-hidden="true" />
+                          Ver
+                        </span>
+                      </button>
+                    )}
                     {/* Selo de estado sobre a capa */}
                     {done && (
-                      <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
+                      <span className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
                         <CheckCircle2 size={11} aria-hidden="true" />
                         Baixado
                       </span>
                     )}
                     {downloading && (
-                      <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
+                      <span className="pointer-events-none absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
                         <Loader2
                           size={11}
                           className="animate-spin"
@@ -952,10 +984,22 @@ function PendingVolumesPanel({
                     </p>
                   </div>
                   {done ? (
-                    <div className="flex items-center justify-center gap-1.5 border-t border-emerald-500/40 bg-emerald-600/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-300">
-                      <CheckCircle2 size={12} aria-hidden="true" />
-                      Baixado
-                    </div>
+                    canPreview ? (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewVolume(num)}
+                        aria-label={`Ver páginas de ${v.name}`}
+                        className="flex items-center justify-center gap-1.5 border-t border-emerald-500/40 bg-emerald-600/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 transition-colors hover:bg-emerald-600/25"
+                      >
+                        <Eye size={12} aria-hidden="true" />
+                        Ver páginas
+                      </button>
+                    ) : (
+                      <div className="flex items-center justify-center gap-1.5 border-t border-emerald-500/40 bg-emerald-600/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-300">
+                        <CheckCircle2 size={12} aria-hidden="true" />
+                        Baixado
+                      </div>
+                    )
                   ) : downloading ? (
                     <div className="flex items-center justify-center gap-1.5 border-t border-sky-600/40 bg-sky-600/15 px-2.5 py-1.5 text-xs font-semibold text-sky-300">
                       <Loader2
@@ -1000,6 +1044,19 @@ function PendingVolumesPanel({
         )}
       </div>
     </div>
+
+    {/* Preview só-leitura de um volume já baixado (igual "Consertar volumes",
+        mas sem nenhuma ação de editar/consertar). */}
+    {previewVolume != null && editor && (
+      <VolumeEditor
+        editor={editor}
+        title={pending.title}
+        focusVolume={previewVolume}
+        readOnly
+        onClose={() => setPreviewVolume(null)}
+      />
+    )}
+    </>
   )
 }
 
