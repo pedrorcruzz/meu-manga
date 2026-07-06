@@ -35,6 +35,17 @@ type Deps struct {
 	// Editor é o "Consertar volumes": lê/edita a pasta em disco da obra (mover
 	// capítulo, capa, corrigir número), sem re-scrapear o site.
 	Editor *usecase.MangaEditor
+	// Mounts persiste as montagens de volumes da obra (sobrevivem a fechar o app).
+	Mounts MountStore
+}
+
+// MountStore persiste as montagens de volumes (volumes montados na tela da obra).
+type MountStore interface {
+	SaveMount(m domain.Mount) error
+	DeleteMount(source, slug string) error
+	ClearMounts() (int, error)
+	LoadMount(source, slug string) (domain.Mount, bool, error)
+	ListMounts() ([]domain.MountSummary, error)
 }
 
 // FileStore lista, lê e apaga páginas baixadas de um capítulo.
@@ -91,6 +102,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/downloads/{id}/tree/cover", s.deleteCover)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/delete", s.deleteTreePage)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/reorder", s.reorderPages)
+	// Montagens salvas — persistência dos volumes montados na tela da obra.
+	s.mux.HandleFunc("GET /api/mounts", s.listMounts)
+	s.mux.HandleFunc("DELETE /api/mounts", s.clearMounts)
+	s.mux.HandleFunc("GET /api/mounts/{source}/{slug}", s.getMount)
+	s.mux.HandleFunc("PUT /api/mounts/{source}/{slug}", s.saveMount)
+	s.mux.HandleFunc("DELETE /api/mounts/{source}/{slug}", s.deleteMount)
 	s.mux.HandleFunc("GET /api/events", s.events)
 }
 
@@ -291,6 +308,79 @@ func (s *Server) deleteCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, tree)
+}
+
+// ── Montagens salvas (persistência dos volumes montados) ─────────────────────────
+
+// listMounts devolve o resumo de todas as montagens salvas (sem as capas).
+func (s *Server) listMounts(w http.ResponseWriter, r *http.Request) {
+	items, err := s.deps.Mounts.ListMounts()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+// getMount devolve a montagem completa de uma obra (com as capas), ou 404.
+func (s *Server) getMount(w http.ResponseWriter, r *http.Request) {
+	m, ok, err := s.deps.Mounts.LoadMount(r.PathValue("source"), r.PathValue("slug"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusNotFound, "mount not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
+}
+
+type saveMountReq struct {
+	Title    string               `json:"title"`
+	ThumbURL string               `json:"thumbUrl"`
+	Volumes  []domain.MountVolume `json:"volumes"`
+}
+
+// saveMount grava (ou substitui) a montagem de uma obra.
+func (s *Server) saveMount(w http.ResponseWriter, r *http.Request) {
+	var req saveMountReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	m := domain.Mount{
+		Source:    r.PathValue("source"),
+		Slug:      r.PathValue("slug"),
+		Title:     req.Title,
+		ThumbURL:  req.ThumbURL,
+		UpdatedAt: time.Now(),
+		Volumes:   req.Volumes,
+	}
+	if err := s.deps.Mounts.SaveMount(m); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// deleteMount remove a montagem de uma obra.
+func (s *Server) deleteMount(w http.ResponseWriter, r *http.Request) {
+	if err := s.deps.Mounts.DeleteMount(r.PathValue("source"), r.PathValue("slug")); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// clearMounts apaga todas as montagens salvas de uma vez.
+func (s *Server) clearMounts(w http.ResponseWriter, r *http.Request) {
+	removed, err := s.deps.Mounts.ClearMounts()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
 }
 
 // quit encerra o programa após responder (o frontend usa isto no "Encerrar").

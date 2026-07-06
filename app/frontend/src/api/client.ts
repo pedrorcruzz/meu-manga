@@ -140,6 +140,44 @@ export interface VolumeInput {
   chapters: ChapterInput[]
 }
 
+/** Volume de uma montagem salva (persistência). Espelha o Volume local sem o id. */
+export interface MountVolumeData {
+  name: string
+  label?: string
+  /** Capa como data URL base64 (ausente = sem capa). */
+  coverImage?: string | null
+  chapters: Chapter[]
+}
+
+/** Corpo enviado ao salvar uma montagem. */
+export interface MountInput {
+  title: string
+  thumbUrl: string
+  volumes: MountVolumeData[]
+}
+
+/** Montagem salva completa (com as capas), como volta do backend. */
+export interface MountDetail {
+  source: string
+  slug: string
+  title: string
+  thumbUrl: string
+  /** Última atualização em ISO-8601. */
+  updatedAt: string
+  volumes: MountVolumeData[]
+}
+
+/** Resumo de uma montagem salva para a lista (sem as capas base64). */
+export interface MountSummary {
+  source: string
+  slug: string
+  title: string
+  thumbUrl: string
+  updatedAt: string
+  volumeCount: number
+  chapterCount: number
+}
+
 export type DownloadOrder = 'asc' | 'desc'
 
 export interface DownloadRequest {
@@ -289,6 +327,36 @@ export const api = {
   /** Limpa do histórico todos os jobs finalizados de uma vez. */
   clearHistory: () =>
     req<{ removed: number }>('/downloads', { method: 'DELETE' }),
+  // ── Montagens salvas (persistência dos volumes montados na obra) ─────────────
+  /** Lista o resumo de todas as montagens salvas (mais recentes primeiro). */
+  listMounts: () => req<MountSummary[]>('/mounts'),
+  /** Devolve a montagem completa de uma obra (com capas). null se não existir. */
+  getMount: async (source: string, slug: string): Promise<MountDetail | null> => {
+    try {
+      return await req<MountDetail>(
+        `/mounts/${encodeURIComponent(source)}/${encodeURIComponent(slug)}`,
+      )
+    } catch (err) {
+      // 404 = obra sem montagem salva (caso comum, não é erro).
+      if (err instanceof Error && /not found|404/i.test(err.message)) return null
+      throw err
+    }
+  },
+  /** Grava (ou substitui) a montagem de uma obra. */
+  saveMount: (source: string, slug: string, body: MountInput) =>
+    req<{ status: string }>(
+      `/mounts/${encodeURIComponent(source)}/${encodeURIComponent(slug)}`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    ),
+  /** Remove a montagem salva de uma obra. */
+  removeMount: (source: string, slug: string) =>
+    req<void>(
+      `/mounts/${encodeURIComponent(source)}/${encodeURIComponent(slug)}`,
+      { method: 'DELETE' },
+    ),
+  /** Apaga todas as montagens salvas de uma vez. */
+  clearMounts: () =>
+    req<{ removed: number }>('/mounts', { method: 'DELETE' }),
   getSettings: () => req<Settings>('/settings'),
   updateSettings: (body: Partial<Settings>) =>
     req<Settings>('/settings', {

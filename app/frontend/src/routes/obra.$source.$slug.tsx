@@ -45,6 +45,8 @@ function ObraPage() {
   )
 
   const [mode, setMode] = useState<Mode>('simple')
+  // true quando o usuário troca o modo manualmente — impede o auto-switch abaixo.
+  const userPickedModeRef = useRef(false)
   const [order, setOrder] = useState<Order>('asc')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
@@ -61,6 +63,29 @@ function ObraPage() {
   useEffect(() => {
     if (isSessionError) refreshSession()
   }, [isSessionError, refreshSession])
+
+  // Se esta obra já tem uma montagem salva, abre direto em "Montar volumes"
+  // (a não ser que o usuário já tenha trocado o modo manualmente). Usa o resumo
+  // (listMounts) para não baixar as capas só para decidir o modo.
+  useEffect(() => {
+    let alive = true
+    api
+      .listMounts()
+      .then((mounts) => {
+        if (!alive) return
+        const has = mounts.some((m) => m.source === source && m.slug === slug)
+        if (has && !userPickedModeRef.current) setMode('volume')
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [source, slug])
+
+  function pickMode(m: Mode) {
+    userPickedModeRef.current = true
+    setMode(m)
+  }
 
   const sortedChapters = useMemo(
     () => sortChapters(data?.chapters ?? [], order),
@@ -360,7 +385,7 @@ function ObraPage() {
         >
           <button
             type="button"
-            onClick={() => setMode('simple')}
+            onClick={() => pickMode('simple')}
             className={`px-4 py-1.5 transition-colors ${
               mode === 'simple'
                 ? 'bg-neutral-700 text-neutral-100'
@@ -371,7 +396,7 @@ function ObraPage() {
           </button>
           <button
             type="button"
-            onClick={() => setMode('volume')}
+            onClick={() => pickMode('volume')}
             className={`px-4 py-1.5 transition-colors ${
               mode === 'volume'
                 ? 'bg-neutral-700 text-neutral-100'
@@ -587,6 +612,10 @@ function ObraPage() {
           chapters={sortedChapters}
           submitting={submitting}
           onDownload={handleVolumeDownload}
+          source={source}
+          slug={slug}
+          title={titleOverride ?? data.manga.title}
+          thumbUrl={data.manga.thumbUrl}
         />
       )}
     </div>

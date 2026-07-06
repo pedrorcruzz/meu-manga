@@ -126,6 +126,7 @@ func main() {
 		Quit:      quit,
 		Files:     store,
 		Editor:    editor,
+		Mounts:    history,
 	})
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: server.Handler()}

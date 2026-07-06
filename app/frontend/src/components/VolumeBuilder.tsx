@@ -9,11 +9,13 @@ import {
   ChevronRight,
   Layers,
   Plus,
+  Save,
   Search,
+  Trash2,
   X,
   Zap,
 } from 'lucide-react'
-import { type Chapter, type VolumeInput } from '~/api/client'
+import { api, type Chapter, type VolumeInput } from '~/api/client'
 import { VolumeCard, type Volume } from './VolumeCard'
 import { VolumeSelectModal } from './VolumeSelectModal'
 import { FilterChip } from './FilterChip'
@@ -80,12 +82,23 @@ interface VolumeBuilderProps {
   chapters: Chapter[]
   submitting: boolean
   onDownload: (volumes: VolumeInput[], allChapters: Chapter[]) => void
+  /** Identificação da obra — usada para persistir a montagem (source+slug). */
+  source: string
+  slug: string
+  /** Título atual (pasta no disco) — guardado junto da montagem salva. */
+  title: string
+  /** Capa da obra — guardada para exibir na lista de montagens salvas. */
+  thumbUrl: string
 }
 
 export function VolumeBuilder({
   chapters,
   submitting,
   onDownload,
+  source,
+  slug,
+  title,
+  thumbUrl,
 }: VolumeBuilderProps) {
   const [volumes, setVolumes] = useState<Volume[]>([])
   const [leftFilter, setLeftFilter] = useState('')
@@ -126,6 +139,78 @@ export function VolumeBuilder({
 
   // ── Success animation state ──────────────────────────────────────────────────
   const [sakuraSuccess, setSakuraSuccess] = useState(false)
+
+  // ── Persistência da montagem (sobrevive a fechar o app) ──────────────────────
+  // Só salvamos depois de tentar carregar a montagem existente, para não
+  // sobrescrever/apagar com o estado vazio inicial.
+  const hydratedRef = useRef(false)
+  const [saved, setSaved] = useState(false)
+
+  // Carrega a montagem salva desta obra ao abrir o modo volumes.
+  useEffect(() => {
+    let alive = true
+    api
+      .getMount(source, slug)
+      .then((m) => {
+        if (!alive || !m || m.volumes.length === 0) return
+        setVolumes(
+          m.volumes.map((v) => ({
+            id: nextVolId(),
+            name: v.name,
+            label: v.label,
+            chapters: v.chapters,
+            coverImage: v.coverImage ?? null,
+          })),
+        )
+        setCurrentVolIdx(0)
+        setSaved(true)
+      })
+      .catch(() => {
+        // sem montagem salva (ou backend fora) — segue com o estado vazio
+      })
+      .finally(() => {
+        if (alive) hydratedRef.current = true
+      })
+    return () => {
+      alive = false
+    }
+  }, [source, slug])
+
+  // Salva automaticamente (debounce) sempre que a montagem muda. Montagem vazia
+  // remove o registro salvo (equivale a "descartar").
+  useEffect(() => {
+    if (!hydratedRef.current) return
+    const t = setTimeout(() => {
+      if (volumes.length === 0) {
+        api.removeMount(source, slug).catch(() => {})
+        setSaved(false)
+        return
+      }
+      api
+        .saveMount(source, slug, {
+          title,
+          thumbUrl,
+          volumes: volumes.map((v) => ({
+            name: v.name,
+            label: v.label,
+            coverImage: v.coverImage,
+            chapters: v.chapters,
+          })),
+        })
+        .then(() => setSaved(true))
+        .catch(() => {})
+    }, 700)
+    return () => clearTimeout(t)
+  }, [volumes, source, slug, title, thumbUrl])
+
+  // Descarta a montagem salva desta obra (limpa a tela e o registro no banco).
+  function discardSaved() {
+    api.removeMount(source, slug).catch(() => {})
+    setVolumes([])
+    setCurrentVolIdx(0)
+    setTargetVolId('')
+    setSaved(false)
+  }
 
   // ── Estado derivado ──────────────────────────────────────────────────────────
 
@@ -508,6 +593,26 @@ export function VolumeBuilder({
             <AlertTriangle size={13} aria-hidden="true" />
             {unassigned.length}{' '}
             {unassigned.length === 1 ? 'capítulo' : 'capítulos'} sem volume
+          </span>
+        )}
+        {saved && (
+          <span className="ml-auto flex items-center gap-3">
+            <span
+              className="flex items-center gap-1.5 text-xs text-emerald-400/90"
+              title="Esta montagem é salva automaticamente e volta ao reabrir o app"
+            >
+              <Save size={12} aria-hidden="true" />
+              Montagem salva
+            </span>
+            <button
+              type="button"
+              onClick={discardSaved}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-neutral-500 transition-colors hover:bg-red-950/40 hover:text-red-400"
+              title="Descartar a montagem salva desta obra"
+            >
+              <Trash2 size={12} aria-hidden="true" />
+              Descartar
+            </button>
           </span>
         )}
       </div>

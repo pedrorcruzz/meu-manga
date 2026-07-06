@@ -6,7 +6,7 @@ import {
   createRootRoute,
 } from '@tanstack/react-router'
 import * as React from 'react'
-import { Download } from 'lucide-react'
+import { Download, Layers } from 'lucide-react'
 import { BlockBanner } from '~/components/BlockBanner'
 import { CloudflareBanner } from '~/components/CloudflareBanner'
 import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary'
@@ -66,6 +66,17 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               </Link>
               {/* Controles - pills alinhados */}
               <div className="flex items-center gap-2">
+                <Link
+                  to="/montagens"
+                  activeProps={{
+                    className:
+                      'border-neutral-700 bg-neutral-800 text-neutral-200',
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-1.5 font-mono text-xs uppercase tracking-wide text-neutral-400 transition hover:border-neutral-700 hover:text-neutral-200"
+                >
+                  <Layers size={12} aria-hidden="true" />
+                  Montagens
+                </Link>
                 <Link
                   to="/downloads"
                   activeProps={{

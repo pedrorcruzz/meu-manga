@@ -56,6 +56,10 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("jobstore schema: %w", err)
 	}
+	if _, err := db.Exec(mountsSchema); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("mounts schema: %w", err)
+	}
 	return &Store{db: db}, nil
 }
 
