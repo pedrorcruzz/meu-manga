@@ -260,7 +260,15 @@ func (s *Store) ScanLibrary() ([]domain.LibraryManga, error) {
 		if !e.IsDir() || isHidden(e.Name()) {
 			continue
 		}
-		out = append(out, summarizeManga(filepath.Join(root, e.Name()), e.Name()))
+		lm := summarizeManga(filepath.Join(root, e.Name()), e.Name())
+		// Só entra na biblioteca quem realmente tem páginas de mangá: o
+		// coverPointer só acha capa quando há imagem dentro de um capítulo.
+		// Assim ignoramos qualquer pasta da Downloads sem essa estrutura —
+		// bundles ".app", instaladores, pastas de fotos soltas etc.
+		if lm.Cover == nil {
+			continue
+		}
+		out = append(out, lm)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return strings.ToLower(out[i].Manga) < strings.ToLower(out[j].Manga)
