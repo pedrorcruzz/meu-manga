@@ -20,11 +20,13 @@ import {
   RotateCcw,
   RotateCw,
   Search,
+  ShieldCheck,
   Trash2,
   Turtle,
   Wrench,
   X,
   XCircle,
+  Zap,
 } from 'lucide-react'
 import {
   api,
@@ -387,6 +389,9 @@ function PendingVolumesPanel({
     0,
   )
 
+  // Aba ativa: "safe" (padrão, 1 volume por vez) x "all" (tudo de uma vez).
+  const [tab, setTab] = useState<'safe' | 'all'>('safe')
+
   // Busca por volume (nome ou número de capítulo).
   const [query, setQuery] = useState('')
   const filtered = useMemo(() => {
@@ -417,42 +422,91 @@ function PendingVolumesPanel({
             {totalChapters} cap.
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onDiscard}
+          disabled={busy}
+          className="ml-auto rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300 transition-colors hover:bg-neutral-800 disabled:opacity-50"
+        >
+          Descartar
+        </button>
+      </div>
+
+      {/* Abas: baixar seguro (padrão) x tudo de uma vez */}
+      <div className="flex w-fit gap-1 rounded-lg border border-neutral-800 bg-neutral-900/60 p-1">
+        <button
+          type="button"
+          onClick={() => setTab('safe')}
+          aria-pressed={tab === 'safe'}
+          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+            tab === 'safe'
+              ? 'bg-emerald-600 text-white'
+              : 'text-neutral-400 hover:text-neutral-200'
+          }`}
+        >
+          <ShieldCheck size={13} aria-hidden="true" />
+          Baixar de forma segura
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('all')}
+          aria-pressed={tab === 'all'}
+          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+            tab === 'all'
+              ? 'bg-amber-600 text-white'
+              : 'text-neutral-400 hover:text-neutral-200'
+          }`}
+        >
+          <Zap size={13} aria-hidden="true" />
+          Baixar tudo de uma vez
+        </button>
+      </div>
+
+      {/* Explicação + ação da aba ativa */}
+      {tab === 'safe' ? (
+        <p className="flex items-start gap-1.5 rounded-lg border border-emerald-800/40 bg-emerald-950/20 p-3 text-xs leading-relaxed text-emerald-200/80">
+          <ShieldCheck size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
+            <span className="font-semibold text-emerald-200">Recomendado.</span>{' '}
+            Escolha um volume abaixo e baixe{' '}
+            <span className="font-semibold text-emerald-100">um por vez</span>. Quando
+            ele terminar, espere{' '}
+            <span className="font-semibold text-emerald-100">15–20 min</span> antes de
+            baixar o próximo — assim o site não detecta “atividade incomum” e não te
+            bloqueia. Você escolhe a ordem; o que não baixar agora fica aqui.
+          </span>
+        </p>
+      ) : (
+        <div className="space-y-2.5 rounded-lg border border-amber-800/40 bg-amber-950/20 p-3">
+          <p className="flex items-start gap-1.5 text-xs leading-relaxed text-amber-200/80">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <span>
+              Enfileira{' '}
+              <span className="font-semibold text-amber-100">
+                todos os {pending.volumes.length} volumes
+              </span>{' '}
+              de uma vez. Baixamos um capítulo por vez com pausas, mas em coleções
+              grandes o site pode disparar o bloqueio por “atividade incomum”. Se
+              acontecer, o download{' '}
+              <span className="font-semibold text-amber-100">não para</span>: aguarda a
+              liberação e continua sozinho — só demora mais.
+            </span>
+          </p>
           <button
             type="button"
             onClick={onDownloadAll}
             disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? (
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
             ) : (
               <Download size={14} aria-hidden="true" />
             )}
-            Baixar todos
-          </button>
-          <button
-            type="button"
-            onClick={onDiscard}
-            disabled={busy}
-            className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-300 transition-colors hover:bg-neutral-800 disabled:opacity-50"
-          >
-            Descartar
+            Baixar todos os {pending.volumes.length} volumes
           </button>
         </div>
-      </div>
-
-      {/* Nota de ritmo (anti-bloqueio) */}
-      <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-violet-200/60">
-        <AlertTriangle
-          size={12}
-          className="mt-0.5 shrink-0"
-          aria-hidden="true"
-        />
-        Baixamos com calma - um capítulo por vez, com pausas - para não disparar
-        o bloqueio do site por "atividade incomum". Baixe só um volume ou todos;
-        o que você não baixar agora fica aqui.
-      </p>
+      )}
 
       {/* Busca por volume */}
       <div className="relative">
