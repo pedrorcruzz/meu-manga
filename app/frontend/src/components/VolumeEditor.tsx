@@ -21,6 +21,7 @@ import {
   type TreeChapter,
   type TreeVolume,
 } from '~/api/client'
+import { ConfirmDialog } from '~/components/ConfirmDialog'
 
 interface VolumeEditorProps {
   jobId: string
@@ -240,6 +241,7 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
                     onRemoveCover={() => removeCover(vol.folder)}
                     onRename={(oldN, newN) => rename(vol.folder, oldN, newN)}
                     busy={busy}
+                    rev={rev}
                   />
                 ))}
 
@@ -263,6 +265,7 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
                     loose
                     onRename={(oldN, newN) => rename('', oldN, newN)}
                     busy={busy}
+                    rev={rev}
                   />
                 )}
               </div>
@@ -342,6 +345,8 @@ interface VolumeSectionProps {
   onOpenChapter: (ch: TreeChapter) => void
   onRename: (oldNumber: string, newNumber: string) => void
   busy: boolean
+  /** Contador de mutações para furar o cache de <img> das miniaturas. */
+  rev: number
   /** Seção de capítulos soltos: sem controles de capa. */
   loose?: boolean
   onAddCover?: () => void
@@ -360,6 +365,7 @@ function VolumeSection({
   onOpenChapter,
   onRename,
   busy,
+  rev,
   loose,
   onAddCover,
   onReplaceCover,
@@ -437,6 +443,7 @@ function VolumeSection({
               onOpen={() => onOpenChapter(ch)}
               onRename={(newN) => onRename(ch.number, newN)}
               busy={busy}
+              rev={rev}
             />
           ))}
         </div>
@@ -483,6 +490,7 @@ interface ChapterCardProps {
   onOpen: () => void
   onRename: (newNumber: string) => void
   busy: boolean
+  rev: number
 }
 
 function ChapterCard({
@@ -494,6 +502,7 @@ function ChapterCard({
   onOpen,
   onRename,
   busy,
+  rev,
 }: ChapterCardProps) {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(ch.number)
@@ -527,7 +536,13 @@ function ChapterCard({
       >
         {ch.firstPage ? (
           <img
-            src={api.mangaPageUrl(jobId, volumeFolder, ch.folder, ch.firstPage)}
+            src={api.mangaPageUrl(
+              jobId,
+              volumeFolder,
+              ch.folder,
+              ch.firstPage,
+              rev,
+            )}
             alt={`Capa do capítulo ${ch.number}`}
             loading="lazy"
             className="h-full w-full object-cover transition duration-150 group-hover:brightness-75"
@@ -620,6 +635,8 @@ function ChapterPreview({
   )
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [overIdx, setOverIdx] = useState<number | null>(null)
+  // Página aguardando confirmação de exclusão (popup da própria interface).
+  const [confirmDel, setConfirmDel] = useState<string | null>(null)
 
   // Reposiciona a página de `from` para `to` (envia a nova ordem ao backend).
   function moveTo(from: number, to: number) {
@@ -635,12 +652,7 @@ function ChapterPreview({
 
   function handleDelete(name: string) {
     if (busy) return
-    if (
-      typeof window !== 'undefined' &&
-      !window.confirm(`Apagar a página ${name}? As demais serão renumeradas.`)
-    )
-      return
-    onDeletePage(name)
+    setConfirmDel(name)
   }
 
   return (
@@ -770,6 +782,26 @@ function ChapterPreview({
           )}
         </div>
       </div>
+      {confirmDel !== null && (
+        <ConfirmDialog
+          title="Apagar página?"
+          message={
+            <>
+              Apagar a página{' '}
+              <span className="font-semibold text-neutral-200">
+                {confirmDel}
+              </span>
+              ? As demais serão renumeradas.
+            </>
+          }
+          confirmLabel="Apagar"
+          onConfirm={() => {
+            onDeletePage(confirmDel)
+            setConfirmDel(null)
+          }}
+          onCancel={() => setConfirmDel(null)}
+        />
+      )}
     </div>
   )
 }

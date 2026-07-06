@@ -257,18 +257,36 @@ type RetryFilter struct {
 	IncludeCompleted bool
 }
 
-// Retry re-enfileira os capítulos ainda não concluídos de um job (fila, falhos,
-// cancelados), preservando a capa de volume quando o capítulo que a carregava
-// também falhou. O filtro permite refazer só um volume ou só um capítulo.
-// Devolve o id do novo job.
+// Retry refaz os capítulos ainda não concluídos de um job (fila, falhos,
+// cancelados) NO PRÓPRIO JOB — reseta os capítulos-alvo para a fila e religa o
+// worker do mesmo container, em vez de criar um job novo. O filtro permite
+// refazer só um volume ou só um capítulo. Só é chamado com o job já parado (a UI
+// esconde "Refazer" enquanto ele roda), então o run() anterior já encerrou.
+// Devolve o próprio id do job.
 func (d *Downloader) Retry(id string, f RetryFilter) (string, error) {
-	job, err := d.Get(id)
+	j, err := d.Get(id)
 	if err != nil {
 		return "", err
 	}
-	req := DownloadRequest{Source: job.Source, Slug: job.Slug, Title: job.Title}
-	volIdx := map[string]int{} // nome do volume → índice em req.Volumes
-	for _, t := range job.Tasks {
+	src, err := d.reg.Get(j.Source)
+	if err != nil {
+		return "", err
+	}
+	// barra o retry se o site nos bloqueou temporariamente
+	if d.gate != nil {
+		if be := d.gate.Blocked(d.now()); be != nil {
+			return "", be
+		}
+	}
+	d.mu.Lock()
+	job, ok := d.jobs[id]
+	if !ok {
+		d.mu.Unlock()
+		return "", domain.ErrJobNotFound
+	}
+	matched := 0
+	for i := range job.Tasks {
+		t := &job.Tasks[i]
 		if t.Status == domain.StatusCompleted && !f.IncludeCompleted {
 			continue
 		}
@@ -278,18 +296,36 @@ func (d *Downloader) Retry(id string, f RetryFilter) (string, error) {
 		if f.ChapterID != "" && t.Chapter.ID != f.ChapterID {
 			continue
 		}
-		vi, ok := volIdx[t.Volume]
-		if !ok {
-			req.Volumes = append(req.Volumes, VolumeReq{Name: t.Volume, Cover: t.Cover})
-			vi = len(req.Volumes) - 1
-			volIdx[t.Volume] = vi
-		}
-		req.Volumes[vi].Chapters = append(req.Volumes[vi].Chapters, t.Chapter)
+		t.Status = domain.StatusQueued
+		t.Error = ""
+		t.Page = 0
+		t.TotalPages = 0
+		matched++
 	}
-	if len(req.Volumes) == 0 {
+	if matched == 0 {
+		d.mu.Unlock()
 		return "", domain.ErrNothingToRetry
 	}
-	return d.Enqueue(req)
+	// recomputa o contador de concluídos (os resetados deixaram de contar)
+	completed := 0
+	for i := range job.Tasks {
+		if job.Tasks[i].Status == domain.StatusCompleted {
+			completed++
+		}
+	}
+	job.CompletedChapters = completed
+	job.Status = domain.StatusQueued
+	// encerra um ctx anterior (no-op se o run() já terminou) e liga um novo run
+	if cancel := d.cancels[id]; cancel != nil {
+		cancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	d.cancels[id] = cancel
+	d.mu.Unlock()
+
+	d.persist(id)
+	go d.run(ctx, src, job)
+	return id, nil
 }
 
 // Remove tira um job do histórico (cancelando-o antes, se estiver rodando).
@@ -323,6 +359,11 @@ func (d *Downloader) run(ctx context.Context, src domain.Source, job *domain.Job
 	// capítulos, para não voltar a tripar o rate-limit do site logo em seguida.
 	var extraDelay time.Duration
 	for i := 0; i < len(job.Tasks); i++ {
+		// Já concluído (ex.: retry no mesmo job só resetou parte dos capítulos):
+		// não re-baixa. Numa fila nova todos estão "queued", então nada é pulado.
+		if job.Tasks[i].Status == domain.StatusCompleted {
+			continue
+		}
 		if ctx.Err() != nil {
 			d.setTaskStatus(job.ID, i, domain.StatusCanceled, "")
 			d.persist(job.ID)

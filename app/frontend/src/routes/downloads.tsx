@@ -123,8 +123,9 @@ function DownloadsPage() {
     setListTick((t) => t + 1)
   }
 
-  // Refaz capítulos que faltaram (novo job). Não perde o que já baixou.
-  // Sem opts = tudo que faltou; opts.volume = só um volume; opts.chapterId = 1 cap.
+  // Refaz capítulos que faltaram NO MESMO job (não cria outro card). Não perde o
+  // que já baixou. Sem opts = tudo que faltou; opts.volume = só um volume;
+  // opts.chapterId = 1 capítulo.
   async function retry(id: string, opts?: RetryOpts) {
     try {
       await api.retryJob(id, opts)

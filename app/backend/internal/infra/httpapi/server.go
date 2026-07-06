@@ -473,10 +473,10 @@ func (s *Server) clearHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
 }
 
-// retryJob re-enfileira os capítulos que faltaram de um job. Filtros opcionais
-// via query: ?volume=<nome> refaz só um volume; ?chapter=<id> refaz só um
-// capítulo; ?force=1 inclui capítulos já concluídos (para re-baixar arquivos que
-// sumiram da pasta). Sem filtro, refaz todos os não-concluídos.
+// retryJob refaz os capítulos que faltaram NO MESMO job (não cria outro). Filtros
+// opcionais via query: ?volume=<nome> refaz só um volume; ?chapter=<id> refaz só
+// um capítulo; ?force=1 inclui capítulos já concluídos (para re-baixar arquivos
+// que sumiram da pasta). Sem filtro, refaz todos os não-concluídos.
 func (s *Server) retryJob(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	filter := usecase.RetryFilter{

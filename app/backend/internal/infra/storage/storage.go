@@ -334,6 +334,10 @@ func (s *Store) RenameChapter(manga, volFolder, oldNumber, newNumber string) err
 // SetCover define a capa do volume como a 001.jpg do seu 1º capítulo (por número).
 // insert=true empurra as páginas em +1 (adicionar); insert=false sobrescreve a
 // 001.jpg (trocar). O jpeg já vem convertido pelo handler.
+//
+// Antes de tudo, normaliza a numeração para 001..N (renumber): assim, se a pasta
+// veio sem 001.jpg (ex.: a capa do site era 002.jpg), o "trocar" sobrescreve a
+// página certa em vez de criar uma 001 extra (duplicata).
 func (s *Store) SetCover(manga, volFolder string, jpeg []byte, insert bool) error {
 	if volFolder != "" && !safeSeg(volFolder) {
 		return os.ErrNotExist
@@ -344,6 +348,9 @@ func (s *Store) SetCover(manga, volFolder string, jpeg []byte, insert bool) erro
 		return os.ErrNotExist
 	}
 	dir := filepath.Join(parent, chFolder)
+	if err := renumber(dir); err != nil {
+		return err
+	}
 	if insert {
 		if err := shiftPagesUp(dir); err != nil {
 			return err
