@@ -233,6 +233,99 @@ func (s *Store) ScanManga(manga string) (domain.MangaTree, error) {
 	return tree, nil
 }
 
+// ScanLibrary varre a pasta raiz (biblioteca central) e devolve um resumo de
+// cada obra (cada subpasta): contagem de volumes, capítulos e capítulos soltos,
+// além de um ponteiro para a 1ª página (miniatura). Varredura leve: NÃO conta as
+// páginas de cada capítulo. Raiz inexistente = lista vazia.
+func (s *Store) ScanLibrary() ([]domain.LibraryManga, error) {
+	root := s.Root()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []domain.LibraryManga{}, nil
+		}
+		return nil, err
+	}
+	out := []domain.LibraryManga{}
+	for _, e := range entries {
+		if !e.IsDir() || isHidden(e.Name()) {
+			continue
+		}
+		out = append(out, summarizeManga(filepath.Join(root, e.Name()), e.Name()))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return strings.ToLower(out[i].Manga) < strings.ToLower(out[j].Manga)
+	})
+	return out, nil
+}
+
+// summarizeManga resume uma obra a partir da sua pasta: conta volumes/capítulos
+// (sem contar páginas) e escolhe a 1ª página como miniatura.
+func summarizeManga(dir, manga string) domain.LibraryManga {
+	lm := domain.LibraryManga{Manga: manga, Path: dir}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return lm
+	}
+	volPrefix := Sanitize(manga) + " "
+	var firstVol, firstLoose string
+	for _, e := range entries {
+		if !e.IsDir() || isHidden(e.Name()) {
+			continue
+		}
+		name := e.Name()
+		if _, ok := strings.CutPrefix(name, volPrefix); ok {
+			lm.Volumes++
+			lm.Chapters += countChapters(filepath.Join(dir, name))
+			if firstVol == "" {
+				firstVol = name
+			}
+			continue
+		}
+		lm.Loose++
+		if firstLoose == "" {
+			firstLoose = name
+		}
+	}
+	lm.Cover = coverPointer(dir, firstVol, firstLoose)
+	return lm
+}
+
+// countChapters conta as subpastas (capítulos) de um volume, ignorando ocultas.
+func countChapters(volDir string) int {
+	entries, err := os.ReadDir(volDir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if e.IsDir() && !isHidden(e.Name()) {
+			n++
+		}
+	}
+	return n
+}
+
+// coverPointer escolhe a 1ª página para miniatura: a 001 do 1º capítulo do 1º
+// volume (por ordem de nome, já numérica com zero-padding) ou, na ausência de
+// volumes, a 1ª imagem do 1º capítulo solto. nil quando não há imagem.
+func coverPointer(mangaDir, firstVol, firstLoose string) *domain.LibraryCover {
+	if firstVol != "" {
+		volDir := filepath.Join(mangaDir, firstVol)
+		if ch, ok := firstChapterFolder(volDir); ok {
+			if imgs := imagesIn(filepath.Join(volDir, ch)); len(imgs) > 0 {
+				return &domain.LibraryCover{Volume: firstVol, Chapter: ch, Name: imgs[0]}
+			}
+		}
+	}
+	if firstLoose != "" {
+		if imgs := imagesIn(filepath.Join(mangaDir, firstLoose)); len(imgs) > 0 {
+			return &domain.LibraryCover{Volume: "", Chapter: firstLoose, Name: imgs[0]}
+		}
+	}
+	return nil
+}
+
 // scanChapters lê as pastas de capítulo dentro de um volume, em ordem numérica.
 func scanChapters(volDir string) []domain.ChapterNode {
 	entries, err := os.ReadDir(volDir)

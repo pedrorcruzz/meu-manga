@@ -64,7 +64,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                 />
                 MEU MANGÁ
               </Link>
-              {/* Controles - pills alinhados */}
+              {/* Controles - pills na ordem do fluxo: montar → baixar → biblioteca */}
               <div className="flex items-center gap-2">
                 <Link
                   to="/montagens"
@@ -78,17 +78,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                   Montagens
                 </Link>
                 <Link
-                  to="/pasta"
-                  activeProps={{
-                    className:
-                      'border-neutral-700 bg-neutral-800 text-neutral-200',
-                  }}
-                  className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-1.5 font-mono text-xs uppercase tracking-wide text-neutral-400 transition hover:border-neutral-700 hover:text-neutral-200"
-                >
-                  <HardDrive size={12} aria-hidden="true" />
-                  Pasta
-                </Link>
-                <Link
                   to="/downloads"
                   activeProps={{
                     className:
@@ -98,6 +87,17 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                 >
                   <Download size={12} aria-hidden="true" />
                   Downloads
+                </Link>
+                <Link
+                  to="/pasta"
+                  activeProps={{
+                    className:
+                      'border-neutral-700 bg-neutral-800 text-neutral-200',
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900/60 px-3 py-1.5 font-mono text-xs uppercase tracking-wide text-neutral-400 transition hover:border-neutral-700 hover:text-neutral-200"
+                >
+                  <HardDrive size={12} aria-hidden="true" />
+                  Meus Mangas
                 </Link>
                 <SessionBadge />
                 <QuitButton />

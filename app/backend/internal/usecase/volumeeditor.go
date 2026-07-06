@@ -6,6 +6,7 @@ import "meumanga/internal/domain"
 // muta (folder-first). Satisfeito por *storage.Store.
 type EditStore interface {
 	ScanManga(manga string) (domain.MangaTree, error)
+	ScanLibrary() ([]domain.LibraryManga, error)
 	ReadRawPage(manga, volFolder, chapterFolder, name string) ([]byte, error)
 	MoveChapter(manga, fromVol, toVol, chapterFolder string) error
 	RenameChapter(manga, volFolder, oldNumber, newNumber string) error

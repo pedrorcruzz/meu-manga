@@ -108,6 +108,7 @@ func (s *Server) routes() {
 	// Editor "Consertar da pasta" — mesma edição folder-first sobre uma pasta de
 	// mangá escolhida em qualquer lugar do disco (endereçada por ?path=/body.path).
 	s.mux.HandleFunc("POST /api/folder/pick", s.pickMangaFolder)
+	s.mux.HandleFunc("GET /api/folder/library", s.folderLibrary)
 	s.mux.HandleFunc("GET /api/folder/tree", s.folderTree)
 	s.mux.HandleFunc("GET /api/folder/tree/page", s.folderTreePage)
 	s.mux.HandleFunc("POST /api/folder/tree/move", s.folderMove)
@@ -335,6 +336,18 @@ func (s *Server) pickMangaFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"path": dir})
+}
+
+// folderLibrary varre a pasta central (a mesma dos downloads) e devolve o resumo
+// de cada obra — a biblioteca de "Meus Mangas". Sem parâmetros: a raiz é sempre
+// a pasta de downloads (biblioteca e destino unificados).
+func (s *Server) folderLibrary(w http.ResponseWriter, r *http.Request) {
+	items, err := s.deps.FolderEditor.Library(s.deps.Settings.DownloadDir())
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 // folderTree varre a pasta escolhida (?path=) e devolve os volumes/capítulos.

@@ -296,6 +296,30 @@ export interface MangaTree {
   loose: TreeChapter[]
 }
 
+/** Ponteiro para a 1ª página de uma obra (miniatura da biblioteca). */
+export interface LibraryCover {
+  /** Subpasta do volume ("" = capítulo solto). */
+  volume: string
+  /** Nome da pasta do capítulo. */
+  chapter: string
+  /** Arquivo da 1ª imagem. */
+  name: string
+}
+
+/** Resumo de uma obra na pasta central (biblioteca "Meus Mangas"). */
+export interface LibraryManga {
+  /** Nome da pasta da obra. */
+  manga: string
+  /** Caminho absoluto da pasta da obra. */
+  path: string
+  volumes: number
+  chapters: number
+  /** Capítulos soltos (modo simples). */
+  loose: number
+  /** Miniatura (1ª página), ausente se a obra não tiver imagens. */
+  cover?: LibraryCover | null
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}/api${path}`, {
     headers: { 'content-type': 'application/json' },
@@ -520,6 +544,9 @@ export const api = {
     deleteTreePage: (b) => api.deleteTreePage(jobId, b),
     reorderPages: (b) => api.reorderPages(jobId, b),
   }),
+  // ── Biblioteca "Meus Mangas" (pasta central = a mesma dos downloads) ──────────
+  /** Lista o resumo de todas as obras encontradas na pasta central. */
+  folderLibrary: () => req<LibraryManga[]>('/folder/library'),
   // ── Editor "Consertar da pasta" (pasta de mangá arbitrária no disco) ──────────
   /** Abre o seletor nativo e devolve a pasta escolhida ("" se cancelado). */
   folderPick: () =>

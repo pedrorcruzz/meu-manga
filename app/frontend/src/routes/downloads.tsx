@@ -938,7 +938,14 @@ function DownloadFolderSection() {
         <p className="mt-2 font-mono text-xs text-red-400">{pickError}</p>
       )}
       <p className="mt-2 font-mono text-[10px] text-neutral-700">
-        Padrão: pasta Downloads do sistema.
+        Padrão: pasta Downloads do sistema. É também sua biblioteca em{' '}
+        <Link
+          to="/pasta"
+          className="underline underline-offset-2 transition-colors hover:text-neutral-400"
+        >
+          Meus Mangas
+        </Link>
+        .
       </p>
     </div>
   )

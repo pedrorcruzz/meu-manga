@@ -65,3 +65,25 @@ type MangaTree struct {
 	Volumes []VolumeNode  `json:"volumes"`
 	Loose   []ChapterNode `json:"loose"` // capítulos direto sob o mangá (modo simples)
 }
+
+// ── Biblioteca: resumo das obras encontradas na pasta central ───────────────────
+
+// LibraryCover aponta a 1ª página de uma obra (endereçada por nomes de pasta,
+// servida por /api/folder/tree/page) para servir de miniatura na biblioteca.
+type LibraryCover struct {
+	Volume  string `json:"volume"`  // subpasta do volume ("" = capítulo solto)
+	Chapter string `json:"chapter"` // nome da pasta do capítulo
+	Name    string `json:"name"`    // arquivo da 1ª imagem
+}
+
+// LibraryManga resume uma obra encontrada na pasta central (biblioteca): nome,
+// caminho absoluto e contagens. Varredura leve — NÃO conta as páginas de cada
+// capítulo, só volumes/capítulos e a 1ª página para a miniatura.
+type LibraryManga struct {
+	Manga    string        `json:"manga"` // nome da pasta da obra
+	Path     string        `json:"path"`  // caminho absoluto da pasta da obra
+	Volumes  int           `json:"volumes"`
+	Chapters int           `json:"chapters"`
+	Loose    int           `json:"loose"` // capítulos soltos (modo simples)
+	Cover    *LibraryCover `json:"cover,omitempty"`
+}

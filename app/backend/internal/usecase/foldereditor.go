@@ -44,6 +44,16 @@ func (e *FolderEditor) resolve(path string) (EditStore, string, error) {
 	return e.storeFor(filepath.Dir(clean)), filepath.Base(clean), nil
 }
 
+// Library varre a pasta central (biblioteca) e devolve o resumo de cada obra
+// (subpasta). read-only, sem guard. `root` costuma ser a própria pasta de
+// downloads (biblioteca e destino de download unificados).
+func (e *FolderEditor) Library(root string) ([]domain.LibraryManga, error) {
+	if root == "" || !filepath.IsAbs(root) {
+		return nil, domain.ErrNotFound
+	}
+	return e.storeFor(filepath.Clean(root)).ScanLibrary()
+}
+
 // Tree lê a árvore em disco da pasta escolhida (read-only, sem guard).
 func (e *FolderEditor) Tree(path string) (domain.MangaTree, error) {
 	st, manga, err := e.resolve(path)

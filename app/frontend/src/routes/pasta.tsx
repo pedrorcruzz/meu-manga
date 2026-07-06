@@ -1,48 +1,56 @@
-// "Consertar da pasta": aponte a pasta-pai de um mangá em qualquer lugar do disco
-// (ex.: obra já baixada e movida para um SSD externo) e o app varre os volumes e
-// capítulos que existirem ali — sem depender de um download registrado no
-// histórico. A partir daí, o mesmo editor "Consertar volumes" reorganiza tudo
-// lendo/gravando direto na pasta. A última pasta aberta é persistida no SQLite.
+// "Meus Mangas" — a biblioteca. Aponte a pasta CENTRAL onde ficam todas as suas
+// obras (ex.: ".../Mangas", que é a MESMA pasta dos downloads) e o app varre cada
+// subpasta como uma obra. Um popup em tela cheia (100vh) lista tudo com scroll
+// infinito; cada obra tem "Consertar", que abre o editor folder-first lendo/
+// gravando direto na pasta. Nada é re-baixado. A pasta central é persistida no
+// SQLite (é o mesmo `downloadDir`).
 
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft,
   BookOpen,
+  Download,
   FolderSearch,
   HardDrive,
   Layers,
+  Library,
   Loader2,
+  Search,
   Wrench,
+  X,
 } from 'lucide-react'
-import { api, type MangaTree } from '~/api/client'
+import { api, type LibraryManga } from '~/api/client'
 import { VolumeEditor } from '~/components/VolumeEditor'
+import { useIncremental } from '~/hooks/useIncremental'
 
 export const Route = createFileRoute('/pasta')({
-  component: PastaPage,
+  component: MeusMangasPage,
 })
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-function PastaPage() {
+function MeusMangasPage() {
   const [path, setPath] = useState('')
-  const [tree, setTree] = useState<MangaTree | null>(null)
+  const [mangas, setMangas] = useState<LibraryManga[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
-  const [editing, setEditing] = useState(false)
-  // Bumpa após fechar o editor para re-varrer a pasta (refletir as mudanças).
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState<LibraryManga | null>(null)
+  // Bumpa após fechar o editor para re-varrer a biblioteca (refletir as mudanças).
   const [rev, setRev] = useState(0)
 
-  // Restaura a última pasta aberta (persistida no SQLite).
+  // A pasta central é a própria pasta de downloads (biblioteca e destino
+  // unificados) — persistida no SQLite.
   useEffect(() => {
     let alive = true
     api
       .getSettings()
       .then((s) => {
-        if (alive && s.mangaFolder) setPath(s.mangaFolder)
+        if (alive) setPath(s.downloadDir || '')
       })
       .catch(() => {})
     return () => {
@@ -50,24 +58,24 @@ function PastaPage() {
     }
   }, [])
 
-  // (Re)varre a pasta sempre que o caminho muda ou após uma edição.
+  // (Re)varre a biblioteca sempre que a pasta muda ou após uma edição.
   useEffect(() => {
     if (!path) {
-      setTree(null)
+      setMangas(null)
       return
     }
     let alive = true
     setLoading(true)
     setError(null)
     api
-      .folderTree(path)
-      .then((t) => {
-        if (alive) setTree(t)
+      .folderLibrary()
+      .then((list) => {
+        if (alive) setMangas(list)
       })
       .catch((e) => {
         if (alive) {
           setError(errMsg(e))
-          setTree(null)
+          setMangas(null)
         }
       })
       .finally(() => {
@@ -78,15 +86,13 @@ function PastaPage() {
     }
   }, [path, rev])
 
+  // Escolher a pasta central = escolher a pasta de downloads (unificado).
   async function pick() {
     setPicking(true)
     setError(null)
     try {
-      const { path: chosen } = await api.folderPick()
-      if (chosen) {
-        setPath(chosen)
-        api.updateSettings({ mangaFolder: chosen }).catch(() => {})
-      }
+      const s = await api.pickFolder()
+      if (s.downloadDir) setPath(s.downloadDir)
     } catch (e) {
       setError(errMsg(e))
     } finally {
@@ -94,14 +100,13 @@ function PastaPage() {
     }
   }
 
-  const editor = useMemo(() => (path ? api.folderEditor(path) : null), [path])
+  const editor = useMemo(
+    () => (editing ? api.folderEditor(editing.path) : null),
+    [editing],
+  )
 
-  const totalChapters = tree
-    ? tree.volumes.reduce((s, v) => s + v.chapters.length, 0) +
-      tree.loose.length
-    : 0
-  const empty =
-    tree != null && tree.volumes.length === 0 && tree.loose.length === 0
+  const count = mangas?.length ?? 0
+  const empty = mangas != null && count === 0
 
   return (
     <div className="space-y-6">
@@ -115,18 +120,14 @@ function PastaPage() {
       </Link>
 
       {/* Cabeçalho */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <HardDrive size={20} className="text-violet-400/80" aria-hidden="true" />
-          <div>
-            <h1 className="text-xl font-semibold text-neutral-100">
-              Consertar da pasta
-            </h1>
-            <p className="text-xs text-neutral-500">
-              Abra um mangá que já está no seu computador e organize os volumes
-              lendo direto da pasta.
-            </p>
-          </div>
+      <div className="flex items-center gap-2.5">
+        <Library size={20} className="text-violet-400/80" aria-hidden="true" />
+        <div>
+          <h1 className="text-xl font-semibold text-neutral-100">Meus Mangas</h1>
+          <p className="text-xs text-neutral-500">
+            Aponte a pasta central onde ficam suas obras e organize os volumes
+            lendo direto do disco.
+          </p>
         </div>
       </div>
 
@@ -139,17 +140,19 @@ function PastaPage() {
         />
         <p className="text-xs leading-relaxed text-sky-200/70">
           Escolha a{' '}
-          <span className="font-semibold text-sky-200">pasta-pai do mangá</span>{' '}
-          (a que tem o nome da obra, ex.:{' '}
-          <span className="font-mono">Witch Hat Atelier</span>), com os volumes e
-          capítulos dentro. O app varre a pasta e mostra o que encontrar — útil
-          quando você já moveu os arquivos para outro lugar (um SSD, por exemplo)
-          e o download não confere mais. Nada é re-baixado: só a pasta é lida e
-          reorganizada.
+          <span className="font-semibold text-sky-200">pasta central</span> (a
+          que guarda TODAS as obras, ex.:{' '}
+          <span className="font-mono">Mangas</span>, com{' '}
+          <span className="font-mono">Mangas/Witch Hat Atelier</span>,{' '}
+          <span className="font-mono">Mangas/Sakamoto Days</span>…). É a{' '}
+          <span className="font-semibold text-sky-200">mesma pasta dos seus
+          downloads</span> — o que você baixa já aparece aqui. O app varre cada
+          subpasta como uma obra; nada é re-baixado, só lido e reorganizado.
+          Funciona quando as pastas seguem o padrão do sistema.
         </p>
       </div>
 
-      {/* Seletor de pasta */}
+      {/* Seletor da pasta central */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/50 p-4">
         <p className="min-w-0 flex-1 truncate rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2 font-mono text-xs text-neutral-300">
           {path || '(nenhuma pasta escolhida)'}
@@ -165,7 +168,7 @@ function PastaPage() {
           ) : (
             <FolderSearch size={13} aria-hidden="true" />
           )}
-          {picking ? 'Abrindo…' : 'Escolher pasta…'}
+          {picking ? 'Abrindo…' : 'Escolher pasta central…'}
         </button>
       </div>
 
@@ -176,88 +179,250 @@ function PastaPage() {
         </div>
       )}
 
-      {/* Resumo do que foi encontrado */}
+      {/* Resumo da biblioteca */}
       {path && !error && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
           {loading ? (
             <div className="flex items-center gap-2 font-mono text-sm text-neutral-500">
               <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-              Varrendo a pasta…
+              Varrendo a biblioteca…
             </div>
           ) : empty ? (
-            <p className="py-4 text-center text-sm text-neutral-500">
-              Nenhum volume ou capítulo encontrado nesta pasta. Confira se você
-              apontou a pasta-pai do mangá (a que contém os volumes).
-            </p>
-          ) : tree ? (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
-                <div className="flex items-center gap-2">
-                  <BookOpen
-                    size={16}
-                    className="shrink-0 text-violet-300"
-                    aria-hidden="true"
-                  />
-                  <span className="font-semibold text-neutral-100">
-                    {tree.manga}
-                  </span>
-                </div>
-                <span className="flex items-center gap-1.5 font-mono text-xs text-neutral-400">
-                  <Layers size={12} aria-hidden="true" />
-                  {tree.volumes.length}{' '}
-                  {tree.volumes.length === 1 ? 'volume' : 'volumes'}
+            <div className="space-y-3 py-2 text-center">
+              <p className="text-sm text-neutral-500">
+                Nenhuma obra encontrada nesta pasta. Confira se você apontou a
+                pasta central (a que contém as pastas das obras).
+              </p>
+              <Link
+                to="/downloads"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-300 transition-colors hover:bg-neutral-800"
+              >
+                <Download size={14} aria-hidden="true" />
+                Baixar um mangá
+              </Link>
+            </div>
+          ) : mangas ? (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <div className="flex items-center gap-2">
+                <BookOpen
+                  size={16}
+                  className="shrink-0 text-violet-300"
+                  aria-hidden="true"
+                />
+                <span className="font-semibold text-neutral-100">
+                  {count} {count === 1 ? 'obra' : 'obras'} na biblioteca
                 </span>
-                {tree.loose.length > 0 && (
-                  <span className="font-mono text-xs text-neutral-400">
-                    {tree.loose.length} solto
-                    {tree.loose.length !== 1 ? 's' : ''}
-                  </span>
-                )}
-                <span className="font-mono text-xs text-neutral-500">
-                  {totalChapters}{' '}
-                  {totalChapters === 1 ? 'capítulo' : 'capítulos'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setEditing(true)}
-                  className="ml-auto flex items-center gap-1.5 rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-white"
-                >
-                  <Wrench size={14} aria-hidden="true" />
-                  Consertar volumes
-                </button>
               </div>
-
-              {/* Prévia dos volumes encontrados */}
-              <div className="flex flex-wrap gap-1.5">
-                {tree.volumes.map((v) => (
-                  <span
-                    key={v.folder}
-                    className="rounded-md border border-neutral-800 bg-neutral-950/50 px-2 py-1 font-mono text-[11px] text-neutral-400"
-                    title={`${v.chapters.length} capítulo${v.chapters.length !== 1 ? 's' : ''}`}
-                  >
-                    {v.name || v.folder}{' '}
-                    <span className="text-neutral-600">
-                      ({v.chapters.length})
-                    </span>
-                  </span>
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="ml-auto flex items-center gap-1.5 rounded-lg bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-900 transition-colors hover:bg-white"
+              >
+                <Library size={14} aria-hidden="true" />
+                Abrir biblioteca
+              </button>
             </div>
           ) : null}
         </div>
       )}
 
-      {/* Editor "Consertar volumes" sobre a pasta escolhida */}
+      {/* Popup 100vh com a biblioteca (scroll infinito) */}
+      {open && mangas && (
+        <LibraryModal
+          mangas={mangas}
+          onClose={() => setOpen(false)}
+          onFix={(m) => setEditing(m)}
+        />
+      )}
+
+      {/* Editor "Consertar volumes" sobre a obra escolhida (stacka sobre o popup) */}
       {editing && editor && (
         <VolumeEditor
           editor={editor}
-          title={tree?.manga || 'Pasta'}
+          title={editing.manga}
           onClose={() => {
-            setEditing(false)
+            setEditing(null)
             setRev((r) => r + 1)
           }}
         />
       )}
+    </div>
+  )
+}
+
+// ── Popup 100vh: lista todas as obras com scroll infinito ─────────────────────
+
+function LibraryModal({
+  mangas,
+  onClose,
+  onFix,
+}: {
+  mangas: LibraryManga[]
+  onClose: () => void
+  onFix: (m: LibraryManga) => void
+}) {
+  const [query, setQuery] = useState('')
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return mangas
+    return mangas.filter((m) => m.manga.toLowerCase().includes(q))
+  }, [mangas, query])
+
+  const { visible, sentinelRef, hasMore } = useIncremental(filtered, 48)
+
+  // Fecha com Escape.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="fixed inset-0 z-40 flex h-screen flex-col bg-neutral-950/95 backdrop-blur">
+      {/* Cabeçalho */}
+      <div className="flex shrink-0 items-center gap-3 border-b border-neutral-800/60 px-4 py-3 sm:px-6">
+        <Library size={18} className="text-violet-300" aria-hidden="true" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-neutral-100">
+            Biblioteca — Meus Mangas
+          </p>
+          <p className="truncate text-xs text-neutral-500">
+            {mangas.length} {mangas.length === 1 ? 'obra' : 'obras'} · escolha
+            qual consertar
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Fechar biblioteca"
+          className="ml-auto flex items-center gap-1.5 rounded-lg border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:bg-neutral-800"
+        >
+          <X size={15} aria-hidden="true" />
+          Fechar
+        </button>
+      </div>
+
+      {/* Busca */}
+      <div className="shrink-0 px-4 py-3 sm:px-6">
+        <div className="relative mx-auto max-w-md">
+          <Search
+            size={14}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"
+            aria-hidden="true"
+          />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar obra…"
+            className="w-full rounded-lg border border-neutral-800 bg-neutral-900/60 py-2 pl-9 pr-9 text-sm placeholder:text-neutral-600 focus:border-neutral-600 focus:outline-none"
+            aria-label="Buscar obra na biblioteca"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Limpar busca"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-neutral-600 transition-colors hover:text-neutral-300"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Grade com scroll infinito (ocupa o resto da altura) */}
+      <div className="retro-scroll min-h-0 flex-1 overflow-y-auto px-4 pb-6 sm:px-6">
+        {filtered.length === 0 ? (
+          <p className="py-16 text-center text-sm text-neutral-600">
+            Nenhuma obra encontrada para “{query}”.
+          </p>
+        ) : (
+          <div className="mx-auto grid max-w-6xl grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {visible.map((m) => (
+              <MangaTile key={m.path} manga={m} onFix={() => onFix(m)} />
+            ))}
+          </div>
+        )}
+        {hasMore && (
+          <div
+            ref={sentinelRef}
+            className="py-4 text-center font-mono text-[11px] text-neutral-700"
+          >
+            carregando mais obras…
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Card de uma obra na biblioteca ────────────────────────────────────────────
+
+function MangaTile({
+  manga,
+  onFix,
+}: {
+  manga: LibraryManga
+  onFix: () => void
+}) {
+  const cover = manga.cover
+    ? api.folderPageUrl(
+        manga.path,
+        manga.cover.volume,
+        manga.cover.chapter,
+        manga.cover.name,
+      )
+    : null
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/60">
+      <div
+        className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden ${
+          cover ? '' : 'bg-gradient-to-br from-neutral-800 to-neutral-950'
+        }`}
+      >
+        {cover ? (
+          <img
+            src={cover}
+            alt={`Capa de ${manga.manga}`}
+            className="h-full w-full object-cover"
+            onError={(e) => (e.currentTarget.style.display = 'none')}
+          />
+        ) : (
+          <BookOpen size={22} className="text-neutral-600" aria-hidden="true" />
+        )}
+        <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
+      </div>
+      <div className="space-y-1 border-t border-neutral-800 px-2.5 py-2">
+        <p
+          className="truncate text-xs font-semibold text-neutral-100"
+          title={manga.manga}
+        >
+          {manga.manga}
+        </p>
+        <p className="flex flex-wrap items-center gap-x-1.5 font-mono text-[10px] text-neutral-500">
+          <span className="flex items-center gap-1">
+            <Layers size={10} aria-hidden="true" />
+            {manga.volumes} {manga.volumes === 1 ? 'vol' : 'vols'}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            {manga.chapters + manga.loose}{' '}
+            {manga.chapters + manga.loose === 1 ? 'cap' : 'caps'}
+          </span>
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onFix}
+        className="flex items-center justify-center gap-1.5 border-t border-neutral-800 bg-neutral-800/40 px-2.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-800"
+      >
+        <Wrench size={12} aria-hidden="true" />
+        Consertar
+      </button>
     </div>
   )
 }

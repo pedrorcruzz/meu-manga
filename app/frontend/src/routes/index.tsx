@@ -147,20 +147,6 @@ function SearchPage() {
         )}
       </div>
 
-      <div className="relative flex items-center gap-4">
-        <Link
-          to="/montagens"
-          className="font-mono text-xs uppercase tracking-widest text-neutral-500 transition hover:text-neutral-200"
-        >
-          [ montagens salvas ]
-        </Link>
-        <Link
-          to="/downloads"
-          className="font-mono text-xs uppercase tracking-widest text-neutral-500 transition hover:text-neutral-200"
-        >
-          [ ver downloads ]
-        </Link>
-      </div>
     </div>
   )
 }
