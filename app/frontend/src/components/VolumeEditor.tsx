@@ -5,6 +5,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
+  ChevronLeft,
+  ChevronRight,
   FolderInput,
   Hash,
   ImagePlus,
@@ -28,8 +30,30 @@ interface VolumeEditorProps {
 
 /** Capítulo sendo arrastado (origem). */
 type Drag = { fromVolume: string; chapter: string }
-/** Capítulo aberto no preview de páginas. */
-type Preview = { volume: string; folder: string; number: string; pages: number }
+/** Capítulo aberto no preview de páginas (nº de páginas vem sempre da árvore viva). */
+type Preview = { volume: string; folder: string; number: string }
+
+/** Acha um capítulo na árvore por volume+pasta (volume "" = capítulo solto). */
+function findChapter(
+  tree: MangaTree | null,
+  volume: string,
+  folder: string,
+): TreeChapter | undefined {
+  if (!tree) return undefined
+  const list =
+    volume === ''
+      ? tree.loose
+      : tree.volumes.find((v) => v.folder === volume)?.chapters
+  return list?.find((c) => c.folder === folder)
+}
+
+/** Cópia de `arr` com o item em `from` reposicionado para `to`. */
+function arrayMove<T>(arr: T[], from: number, to: number): T[] {
+  const copy = arr.slice()
+  const [item] = copy.splice(from, 1)
+  copy.splice(to, 0, item)
+  return copy
+}
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
@@ -44,6 +68,9 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
+  // Bumpa a cada mutação para furar o cache de <img> (o nome 001.jpg passa a
+  // apontar para outro conteúdo após reordenar/apagar).
+  const [rev, setRev] = useState(0)
 
   useEffect(() => {
     let alive = true
@@ -77,6 +104,7 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
     setError(null)
     try {
       setTree(await fn())
+      setRev((r) => r + 1)
     } catch (e) {
       setError(errMsg(e))
     } finally {
@@ -106,6 +134,14 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
     const n = newNumber.trim()
     if (n === '' || n === oldNumber) return
     void run(() => api.renameChapter(jobId, { volume, oldNumber, newNumber: n }))
+  }
+
+  function deletePage(volume: string, chapter: string, name: string) {
+    void run(() => api.deleteTreePage(jobId, { volume, chapter, name }))
+  }
+
+  function reorderPages(volume: string, chapter: string, order: string[]) {
+    void run(() => api.reorderPages(jobId, { volume, chapter, order }))
   }
 
   const empty =
@@ -156,8 +192,10 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
               Arraste um capítulo para outro volume para movê-lo. Use a capa para{' '}
               <span className="text-neutral-400">adicionar</span> (cria uma nova 1ª
               página) ou <span className="text-neutral-400">trocar</span> a 001.jpg.
-              As páginas se renumeram sozinhas. Nada é re-baixado — só a pasta em
-              disco é alterada.
+              Abra um capítulo para{' '}
+              <span className="text-neutral-400">reordenar</span> ou{' '}
+              <span className="text-neutral-400">apagar</span> páginas. As páginas se
+              renumeram sozinhas. Nada é re-baixado — só a pasta em disco é alterada.
             </p>
           </div>
 
@@ -195,7 +233,6 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
                         volume: vol.folder,
                         folder: ch.folder,
                         number: ch.number,
-                        pages: ch.pages,
                       })
                     }
                     onAddCover={() => void setCover(vol.folder, 'insert')}
@@ -221,7 +258,6 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
                         volume: '',
                         folder: ch.folder,
                         number: ch.number,
-                        pages: ch.pages,
                       })
                     }
                     loose
@@ -252,7 +288,16 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
         <ChapterPreview
           jobId={jobId}
           preview={preview}
+          pages={findChapter(tree, preview.volume, preview.folder)?.pages ?? 0}
+          rev={rev}
+          busy={busy}
           onOpenLightbox={setLightbox}
+          onDeletePage={(name) =>
+            deletePage(preview.volume, preview.folder, name)
+          }
+          onReorder={(order) =>
+            reorderPages(preview.volume, preview.folder, order)
+          }
           onClose={() => setPreview(null)}
         />
       )}
@@ -267,7 +312,13 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
           onClick={() => setLightbox(null)}
         >
           <img
-            src={api.mangaPageUrl(jobId, preview.volume, preview.folder, lightbox)}
+            src={api.mangaPageUrl(
+              jobId,
+              preview.volume,
+              preview.folder,
+              lightbox,
+              rev,
+            )}
             alt={`Página ${lightbox}`}
             className="max-h-full max-w-full object-contain"
             onClick={(e) => e.stopPropagation()}
@@ -540,21 +591,58 @@ function ChapterCard({
 interface ChapterPreviewProps {
   jobId: string
   preview: Preview
+  /** Nº de páginas no disco (vem da árvore viva). */
+  pages: number
+  /** Contador de mutações para furar o cache de <img>. */
+  rev: number
+  busy: boolean
   onOpenLightbox: (name: string) => void
+  onDeletePage: (name: string) => void
+  onReorder: (order: string[]) => void
   onClose: () => void
 }
 
 function ChapterPreview({
   jobId,
   preview,
+  pages,
+  rev,
+  busy,
   onOpenLightbox,
+  onDeletePage,
+  onReorder,
   onClose,
 }: ChapterPreviewProps) {
   // As páginas em disco são sempre 001.jpg…00N.jpg (renumeradas pelo backend).
-  const pages = Array.from(
-    { length: preview.pages },
+  const names = Array.from(
+    { length: pages },
     (_, i) => `${String(i + 1).padStart(3, '0')}.jpg`,
   )
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [overIdx, setOverIdx] = useState<number | null>(null)
+
+  // Reposiciona a página de `from` para `to` (envia a nova ordem ao backend).
+  function moveTo(from: number, to: number) {
+    if (busy || to < 0 || to >= names.length || from === to) return
+    onReorder(arrayMove(names, from, to))
+  }
+
+  function handleDrop() {
+    if (dragIdx !== null && overIdx !== null) moveTo(dragIdx, overIdx)
+    setDragIdx(null)
+    setOverIdx(null)
+  }
+
+  function handleDelete(name: string) {
+    if (busy) return
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(`Apagar a página ${name}? As demais serão renumeradas.`)
+    )
+      return
+    onDeletePage(name)
+  }
+
   return (
     <div
       role="dialog"
@@ -565,60 +653,156 @@ function ChapterPreview({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-2xl">
+      <div className="relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-2xl">
         <div className="flex items-center justify-between border-b border-neutral-800 p-4">
           <div>
             <h3 className="font-semibold text-neutral-100">
               Capítulo {preview.number}
             </h3>
             <p className="text-xs text-neutral-500">
-              {preview.pages} página{preview.pages !== 1 ? 's' : ''}
+              {pages} página{pages !== 1 ? 's' : ''} · arraste para reordenar,
+              use as setas ou apague
             </p>
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Fechar preview"
-            className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            {busy && (
+              <Loader2
+                size={16}
+                className="animate-spin text-neutral-500"
+                aria-label="Aplicando…"
+              />
+            )}
+            <button
+              onClick={onClose}
+              aria-label="Fechar preview"
+              className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
         <div className="overflow-y-auto p-4">
-          {pages.length === 0 ? (
+          {names.length === 0 ? (
             <p className="py-8 text-center text-sm text-neutral-500">
               Capítulo sem páginas.
             </p>
           ) : (
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-              {pages.map((name) => (
-                <button
+              {names.map((name, i) => (
+                <div
                   key={name}
-                  type="button"
-                  onClick={() => onOpenLightbox(name)}
-                  aria-label={`Ampliar página ${name}`}
-                  className="group relative overflow-hidden rounded-lg border border-neutral-800 bg-neutral-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  draggable={!busy}
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = 'move'
+                    setDragIdx(i)
+                  }}
+                  onDragEnter={() => dragIdx !== null && setOverIdx(i)}
+                  onDragOver={(e) => {
+                    if (dragIdx !== null) e.preventDefault()
+                  }}
+                  onDragEnd={() => {
+                    setDragIdx(null)
+                    setOverIdx(null)
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    handleDrop()
+                  }}
+                  className={`group relative overflow-hidden rounded-lg border bg-neutral-800 transition-colors ${
+                    overIdx === i && dragIdx !== null && dragIdx !== i
+                      ? 'border-sky-500 ring-2 ring-sky-500'
+                      : 'border-neutral-800'
+                  } ${dragIdx === i ? 'opacity-40' : ''} ${
+                    busy ? '' : 'cursor-grab active:cursor-grabbing'
+                  }`}
                 >
-                  <img
-                    src={api.mangaPageUrl(
-                      jobId,
-                      preview.volume,
-                      preview.folder,
-                      name,
-                    )}
-                    alt={`Página ${name}`}
-                    loading="lazy"
-                    className="aspect-[2/3] w-full object-cover transition duration-150 group-hover:brightness-75"
-                  />
-                  <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300">
-                    {name}
+                  <button
+                    type="button"
+                    onClick={() => onOpenLightbox(name)}
+                    aria-label={`Ampliar página ${name}`}
+                    className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  >
+                    <img
+                      src={api.mangaPageUrl(
+                        jobId,
+                        preview.volume,
+                        preview.folder,
+                        name,
+                        rev,
+                      )}
+                      alt={`Página ${name}`}
+                      loading="lazy"
+                      draggable={false}
+                      className="aspect-[2/3] w-full object-cover transition duration-150 group-hover:brightness-50"
+                    />
+                  </button>
+                  <span className="pointer-events-none absolute left-1 top-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300">
+                    {i + 1}
                   </span>
-                </button>
+                  {/* Controles: mover ‹ ›, apagar */}
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-t from-black/80 to-transparent p-1 opacity-0 transition group-hover:opacity-100">
+                    <PageBtn
+                      label={`Mover página ${name} para trás`}
+                      onClick={() => moveTo(i, i - 1)}
+                      disabled={busy || i === 0}
+                    >
+                      <ChevronLeft size={13} aria-hidden="true" />
+                    </PageBtn>
+                    <PageBtn
+                      label={`Mover página ${name} para frente`}
+                      onClick={() => moveTo(i, i + 1)}
+                      disabled={busy || i === names.length - 1}
+                    >
+                      <ChevronRight size={13} aria-hidden="true" />
+                    </PageBtn>
+                    <PageBtn
+                      label={`Apagar página ${name}`}
+                      onClick={() => handleDelete(name)}
+                      disabled={busy}
+                      danger
+                    >
+                      <Trash2 size={12} aria-hidden="true" />
+                    </PageBtn>
+                  </div>
+                </div>
               ))}
             </div>
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+// Botão de controle de uma página (sobreposto na miniatura).
+function PageBtn({
+  label,
+  onClick,
+  disabled,
+  danger,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  danger?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      disabled={disabled}
+      className={`pointer-events-auto rounded p-1 text-neutral-100 transition disabled:opacity-30 ${
+        danger
+          ? 'bg-red-900/70 hover:bg-red-700'
+          : 'bg-neutral-700/80 hover:bg-neutral-600'
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 

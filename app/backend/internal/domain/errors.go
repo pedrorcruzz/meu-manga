@@ -32,6 +32,9 @@ var (
 	ErrEditBusy = errors.New("há um download em andamento para esta obra — aguarde terminar para consertar os volumes")
 	// ErrNoCover means a cover removal was requested but the chapter has no pages.
 	ErrNoCover = errors.New("este volume não tem capa para remover")
+	// ErrBadOrder means a page reorder request didn't match the chapter's pages
+	// on disk (wrong count, unknown/duplicate filename).
+	ErrBadOrder = errors.New("ordem de páginas inválida")
 )
 
 // blockPrefix é o prefixo estável da mensagem de bloqueio temporário. O frontend

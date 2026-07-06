@@ -330,8 +330,9 @@ export const api = {
     vol: string,
     chap: string,
     name: string,
+    rev?: number,
   ): string =>
-    `${API_BASE}/api/downloads/${encodeURIComponent(jobId)}/tree/page?vol=${encodeURIComponent(vol)}&chap=${encodeURIComponent(chap)}&name=${encodeURIComponent(name)}`,
+    `${API_BASE}/api/downloads/${encodeURIComponent(jobId)}/tree/page?vol=${encodeURIComponent(vol)}&chap=${encodeURIComponent(chap)}&name=${encodeURIComponent(name)}${rev ? `&v=${String(rev)}` : ''}`,
   /** Move a pasta de um capítulo entre volumes. Devolve a árvore atualizada. */
   moveChapter: (
     jobId: string,
@@ -367,6 +368,30 @@ export const api = {
     req<MangaTree>(
       `/downloads/${encodeURIComponent(jobId)}/tree/cover?vol=${encodeURIComponent(volume)}`,
       { method: 'DELETE' },
+    ),
+  /**
+   * Apaga uma página específica de um capítulo (endereçada por nome de pasta) e
+   * renumera o restante. `volume` vazio = capítulo solto. Devolve a árvore nova.
+   */
+  deleteTreePage: (
+    jobId: string,
+    body: { volume: string; chapter: string; name: string },
+  ) =>
+    req<MangaTree>(
+      `/downloads/${encodeURIComponent(jobId)}/tree/page/delete`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  /**
+   * Reordena as páginas de um capítulo. `order` é a lista atual de arquivos na
+   * nova ordem desejada (renumerada para 001.jpg…00N.jpg). Devolve a árvore nova.
+   */
+  reorderPages: (
+    jobId: string,
+    body: { volume: string; chapter: string; order: string[] },
+  ) =>
+    req<MangaTree>(
+      `/downloads/${encodeURIComponent(jobId)}/tree/page/reorder`,
+      { method: 'POST', body: JSON.stringify(body) },
     ),
   /** Encerra o backend e o servidor de desenvolvimento. Falhas de rede são
    *  esperadas - o servidor mata a si mesmo no meio da resposta. */

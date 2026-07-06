@@ -196,7 +196,12 @@ func (s *Store) subdir(manga, volFolder string) string {
 // soltos, contando páginas de fato no disco. Pasta inexistente = árvore vazia.
 func (s *Store) ScanManga(manga string) (domain.MangaTree, error) {
 	root := s.MangaDir(manga)
-	tree := domain.MangaTree{Manga: manga, Root: root}
+	tree := domain.MangaTree{
+		Manga:   manga,
+		Root:    root,
+		Volumes: []domain.VolumeNode{},
+		Loose:   []domain.ChapterNode{},
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -232,9 +237,9 @@ func (s *Store) ScanManga(manga string) (domain.MangaTree, error) {
 func scanChapters(volDir string) []domain.ChapterNode {
 	entries, err := os.ReadDir(volDir)
 	if err != nil {
-		return nil
+		return []domain.ChapterNode{}
 	}
-	var out []domain.ChapterNode
+	out := []domain.ChapterNode{}
 	for _, e := range entries {
 		if !e.IsDir() || isHidden(e.Name()) {
 			continue
@@ -367,6 +372,69 @@ func (s *Store) RemoveCover(manga, volFolder string) error {
 		return err
 	}
 	return renumber(dir)
+}
+
+// DeleteTreePage apaga uma página específica de um capítulo (endereçado por
+// nomes de pasta, como o resto do editor) e renumera o restante para
+// 001.jpg…00N.jpg. Rejeita segmentos inseguros (path traversal).
+func (s *Store) DeleteTreePage(manga, volFolder, chapterFolder, name string) error {
+	if !safeSeg(chapterFolder) || !safeSeg(name) {
+		return os.ErrNotExist
+	}
+	if volFolder != "" && !safeSeg(volFolder) {
+		return os.ErrNotExist
+	}
+	dir := filepath.Join(s.subdir(manga, volFolder), chapterFolder)
+	if err := os.Remove(filepath.Join(dir, name)); err != nil {
+		return err
+	}
+	return renumber(dir)
+}
+
+// ReorderPages reordena as páginas de um capítulo para a sequência em `order`
+// (os nomes de arquivo atuais na ordem desejada) e as renumera para
+// 001.jpg…00N.jpg. `order` precisa ser uma permutação exata das imagens no
+// disco. A troca é feita em duas fases (nomes temporários → finais) para não
+// colidir nomes existentes. Rejeita segmentos inseguros (path traversal).
+func (s *Store) ReorderPages(manga, volFolder, chapterFolder string, order []string) error {
+	if !safeSeg(chapterFolder) {
+		return os.ErrNotExist
+	}
+	if volFolder != "" && !safeSeg(volFolder) {
+		return os.ErrNotExist
+	}
+	dir := filepath.Join(s.subdir(manga, volFolder), chapterFolder)
+	current := imagesIn(dir)
+	if len(order) != len(current) {
+		return domain.ErrBadOrder
+	}
+	remaining := make(map[string]bool, len(current))
+	for _, n := range current {
+		remaining[n] = true
+	}
+	for _, n := range order {
+		if !safeSeg(n) || !remaining[n] {
+			return domain.ErrBadOrder // nome desconhecido ou duplicado em `order`
+		}
+		delete(remaining, n)
+	}
+	// Fase 1: cada arquivo para um nome temporário oculto (não é imagem, então
+	// imagesIn/renumber o ignoram se algo interromper no meio).
+	for i, n := range order {
+		tmp := fmt.Sprintf(".reorder_%03d", i+1)
+		if err := os.Rename(filepath.Join(dir, n), filepath.Join(dir, tmp)); err != nil {
+			return err
+		}
+	}
+	// Fase 2: temporários → 001.jpg…00N.jpg na ordem pedida.
+	for i := range order {
+		tmp := fmt.Sprintf(".reorder_%03d", i+1)
+		want := fmt.Sprintf("%03d.jpg", i+1)
+		if err := os.Rename(filepath.Join(dir, tmp), filepath.Join(dir, want)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // shiftPagesUp renomeia 00N→00N+1 (do maior para o menor) para abrir a 001.jpg.

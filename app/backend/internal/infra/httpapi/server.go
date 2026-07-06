@@ -89,6 +89,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/rename", s.renameChapter)
 	s.mux.HandleFunc("PUT /api/downloads/{id}/tree/cover", s.putCover)
 	s.mux.HandleFunc("DELETE /api/downloads/{id}/tree/cover", s.deleteCover)
+	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/delete", s.deleteTreePage)
+	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/reorder", s.reorderPages)
 	s.mux.HandleFunc("GET /api/events", s.events)
 }
 
@@ -237,6 +239,43 @@ func (s *Server) putCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tree, err := s.deps.Editor.SetCover(r.PathValue("id"), req.Volume, jpeg, req.Mode != "replace")
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+type pageOpReq struct {
+	Volume  string   `json:"volume"`  // subpasta do volume ("" = capítulo solto)
+	Chapter string   `json:"chapter"` // nome da pasta, ex.: "Cap 5"
+	Name    string   `json:"name"`    // arquivo da página, ex.: "003.jpg" (delete)
+	Order   []string `json:"order"`   // nova ordem dos arquivos (reorder)
+}
+
+// deleteTreePage apaga uma página específica de um capítulo e renumera o resto.
+func (s *Server) deleteTreePage(w http.ResponseWriter, r *http.Request) {
+	var req pageOpReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chapter == "" || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.Editor.DeletePage(r.PathValue("id"), req.Volume, req.Chapter, req.Name)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+// reorderPages reordena as páginas de um capítulo (nova sequência em `order`).
+func (s *Server) reorderPages(w http.ResponseWriter, r *http.Request) {
+	var req pageOpReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chapter == "" || len(req.Order) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.Editor.ReorderPages(r.PathValue("id"), req.Volume, req.Chapter, req.Order)
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -536,6 +575,8 @@ func writeUseErr(w http.ResponseWriter, err error) {
 		errors.Is(err, domain.ErrEditBusy),
 		errors.Is(err, domain.ErrChapterExists):
 		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, domain.ErrBadOrder):
+		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, domain.ErrNoSession):
 		writeError(w, http.StatusFailedDependency, err.Error())
 	default:
