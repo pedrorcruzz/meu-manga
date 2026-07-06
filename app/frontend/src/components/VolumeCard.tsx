@@ -8,7 +8,7 @@ import type { Chapter } from '~/api/client'
 export interface Volume {
   /** Chave local estável (não enviada ao backend). */
   id: string
-  /** Nome editável, ex.: "V001". Enviado ao backend como nome do volume. */
+  /** Nome editável, ex.: "001". Enviado ao backend como nome do volume. */
   name: string
   /**
    * Rótulo original da fonte, ex.: "Volume 15".

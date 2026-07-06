@@ -28,7 +28,7 @@ function nextVolId(): string {
 }
 
 function padName(index: number): string {
-  return `V${String(index + 1).padStart(3, '0')}`
+  return String(index + 1).padStart(3, '0')
 }
 
 /**
@@ -66,7 +66,7 @@ function buildSakuraVolumes(chapters: Chapter[]): Volume[] {
       (a, b) => parseFloat(a.number) - parseFloat(b.number),
     )
     const num = parseSakuraVolumeNumber(label)
-    const name = num !== null ? `V${String(num).padStart(3, '0')}` : label
+    const name = num !== null ? String(num).padStart(3, '0') : label
     return {
       id: nextVolId(),
       name,
@@ -419,7 +419,7 @@ export function VolumeBuilder({
       return
     }
 
-    // Substring do nome (case-insensitive; ex: "V003", "003").
+    // Substring do nome (case-insensitive; ex: "003", "3").
     const found = volumes.findIndex((v) =>
       v.name.toLowerCase().includes(q.toLowerCase()),
     )
@@ -970,7 +970,7 @@ export function VolumeBuilder({
                   type="text"
                   value={jumpQuery}
                   onChange={(e) => handleJumpChange(e.target.value)}
-                  placeholder="Ir para volume… (digite 5 ou V005)"
+                  placeholder="Ir para volume… (digite 5 ou 005)"
                   className="w-full rounded-lg border border-neutral-800 bg-neutral-800/40 py-1.5 pl-7 pr-8 text-xs placeholder:text-neutral-700 focus:border-neutral-600 focus:outline-none"
                   aria-label="Ir para volume"
                   inputMode="numeric"

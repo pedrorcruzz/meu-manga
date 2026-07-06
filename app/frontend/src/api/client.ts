@@ -131,7 +131,7 @@ export interface ChapterInput {
 
 /** Volume no payload de download (modo volumes). */
 export interface VolumeInput {
-  /** Nome do volume, ex.: "V001". Zero-padded a 3 dígitos. */
+  /** Nome do volume, ex.: "001". Zero-padded a 3 dígitos. */
   name: string
   /**
    * Capa como data URL base64 (qualquer formato de imagem).

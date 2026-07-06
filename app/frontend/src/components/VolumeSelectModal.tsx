@@ -315,7 +315,7 @@ export function VolumeSelectModal({
     for (let i = 0; i < chosen.length; i += n) {
       created.push({
         id: `extra-${++extraIdRef.current}`,
-        name: `V${String(start++).padStart(3, '0')}`,
+        name: String(start++).padStart(3, '0'),
         chapters: chosen.slice(i, i + n),
         coverImage: null,
       })
@@ -387,7 +387,7 @@ export function VolumeSelectModal({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar volume ou capítulo… (ex: V003, 3, 42)"
+              placeholder="Buscar volume ou capítulo… (ex: 003, 3, 42)"
               className="w-full rounded-lg border border-neutral-800 bg-neutral-800/60 py-2 pl-9 pr-9 text-sm placeholder:text-neutral-700 focus:border-neutral-600 focus:outline-none"
               aria-label="Buscar volumes"
             />

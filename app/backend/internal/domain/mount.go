@@ -5,7 +5,7 @@ import "time"
 // MountVolume é um volume montado pelo usuário na tela da obra, guardado para
 // sobreviver a fechar o app. Espelha o Volume do frontend (sem o id local).
 type MountVolume struct {
-	// Name é o nome editável do volume, ex.: "V001".
+	// Name é o nome editável do volume, ex.: "001".
 	Name string `json:"name"`
 	// Label é o rótulo original da fonte, ex.: "Volume 15" (informativo).
 	Label string `json:"label,omitempty"`

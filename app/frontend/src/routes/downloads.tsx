@@ -565,7 +565,7 @@ function PendingVolumesPanel({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar volume ou capítulo… (ex: V003, 3, 42)"
+          placeholder="Buscar volume ou capítulo… (ex: 003, 3, 42)"
           className="w-full rounded-lg border border-neutral-800 bg-neutral-900/60 py-2 pl-9 pr-9 text-sm placeholder:text-neutral-600 focus:border-neutral-600 focus:outline-none"
           aria-label="Buscar volumes para baixar"
         />

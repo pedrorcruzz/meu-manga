@@ -323,7 +323,7 @@ function ObraPage() {
               É o nome do mangá e também da pasta onde os capítulos ficam
               salvos no seu computador. Mudar aqui troca só o nome dessa pasta
               de destino. Não altera o site de origem nem o conteúdo baixado.
-              No disco fica assim: Nome do Manga {'>'} Nome do Manga V001{' '}
+              No disco fica assim: Nome do Manga {'>'} Nome do Manga 001{' '}
               {'>'} Cap 1.
             </HelpButton>
           </div>
