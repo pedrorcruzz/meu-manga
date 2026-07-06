@@ -199,6 +199,7 @@ export interface DownloadRequest {
 
 export type DownloadEventType =
   | 'progress'
+  | 'chapter_start'
   | 'chapter_done'
   | 'job_done'
   | 'error'

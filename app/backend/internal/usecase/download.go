@@ -494,6 +494,11 @@ func (d *Downloader) runChapter(ctx context.Context, src domain.Source, job *dom
 	ch := task.Chapter
 	d.setTaskStatus(job.ID, i, domain.StatusRunning, "")
 	d.persist(job.ID)
+	// Avisa a UI que ESTE capítulo começou. Sem isso, o frontend só re-busca o
+	// status nos eventos de conclusão/erro, então os capítulos seguintes ficavam
+	// travados no ícone "na fila" e nunca mostravam o spinner de "baixando".
+	d.bus.Publish(domain.Event{Type: domain.EventChapterStart, JobID: job.ID,
+		ChapterNumber: ch.Number})
 	chapterLabel := fmt.Sprintf("Cap %s", ch.Number)
 
 	// capa do volume: entra como 001.jpg e empurra as páginas em +1

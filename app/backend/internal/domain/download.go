@@ -53,10 +53,11 @@ func (j Job) Pending() int {
 type EventType string
 
 const (
-	EventProgress    EventType = "progress"
-	EventChapterDone EventType = "chapter_done"
-	EventJobDone     EventType = "job_done"
-	EventError       EventType = "error"
+	EventProgress     EventType = "progress"
+	EventChapterStart EventType = "chapter_start"
+	EventChapterDone  EventType = "chapter_done"
+	EventJobDone      EventType = "job_done"
+	EventError        EventType = "error"
 )
 
 // Event is a single SSE progress message.
