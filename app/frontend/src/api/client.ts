@@ -247,10 +247,13 @@ export interface TreeEditorApi {
   }) => Promise<MangaTree>
   setCover: (b: {
     volume: string
+    /** Pasta do capítulo. Vazio/ausente = capa do volume (1º capítulo). */
+    chapter?: string
     image: string
     mode: 'insert' | 'replace'
   }) => Promise<MangaTree>
-  removeCover: (volume: string) => Promise<MangaTree>
+  /** `chapter` vazio/ausente = capa do volume (1º capítulo); preenchido = aquele capítulo. */
+  removeCover: (volume: string, chapter?: string) => Promise<MangaTree>
   deleteTreePage: (b: {
     volume: string
     chapter: string
@@ -497,16 +500,21 @@ export const api = {
    */
   setCover: (
     jobId: string,
-    body: { volume: string; image: string; mode: 'insert' | 'replace' },
+    body: {
+      volume: string
+      chapter?: string
+      image: string
+      mode: 'insert' | 'replace'
+    },
   ) =>
     req<MangaTree>(`/downloads/${encodeURIComponent(jobId)}/tree/cover`, {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
-  /** Remove a capa de um volume. */
-  removeCover: (jobId: string, volume: string) =>
+  /** Remove a 1ª página do alvo. `chapter` vazio = capa do volume (1º capítulo). */
+  removeCover: (jobId: string, volume: string, chapter?: string) =>
     req<MangaTree>(
-      `/downloads/${encodeURIComponent(jobId)}/tree/cover?vol=${encodeURIComponent(volume)}`,
+      `/downloads/${encodeURIComponent(jobId)}/tree/cover?vol=${encodeURIComponent(volume)}${chapter ? `&chap=${encodeURIComponent(chapter)}` : ''}`,
       { method: 'DELETE' },
     ),
   /**
@@ -541,7 +549,7 @@ export const api = {
     moveChapter: (b) => api.moveChapter(jobId, b),
     renameChapter: (b) => api.renameChapter(jobId, b),
     setCover: (b) => api.setCover(jobId, b),
-    removeCover: (volume) => api.removeCover(jobId, volume),
+    removeCover: (volume, chapter) => api.removeCover(jobId, volume, chapter),
     deleteTreePage: (b) => api.deleteTreePage(jobId, b),
     reorderPages: (b) => api.reorderPages(jobId, b),
   }),
@@ -584,9 +592,9 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ path, ...b }),
       }),
-    removeCover: (volume) =>
+    removeCover: (volume, chapter) =>
       req<MangaTree>(
-        `/folder/tree/cover?path=${encodeURIComponent(path)}&vol=${encodeURIComponent(volume)}`,
+        `/folder/tree/cover?path=${encodeURIComponent(path)}&vol=${encodeURIComponent(volume)}${chapter ? `&chap=${encodeURIComponent(chapter)}` : ''}`,
         { method: 'DELETE' },
       ),
     deleteTreePage: (b) =>

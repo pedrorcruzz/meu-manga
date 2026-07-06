@@ -147,6 +147,35 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
     )
   }
 
+  // ── Ações escopadas a UM capítulo (dentro do preview) ──────────────────────
+  // Mesmas operações da capa, mas mirando a pasta do capítulo aberto — afetam só
+  // ele, sem tocar no resto do volume (o backend recebe o chapterFolder).
+
+  async function setCoverChapter(
+    volume: string,
+    chapter: string,
+    mode: 'insert' | 'replace',
+  ) {
+    const file = await pickImageFile()
+    if (!file) return
+    const image = await fileToDataURL(file)
+    void run(() => editor.setCover({ volume, chapter, image, mode }))
+  }
+
+  function removeFirstPageChapter(volume: string, chapter: string) {
+    void run(() => editor.removeCover(volume, chapter))
+  }
+
+  function removeLastPageChapter(
+    volume: string,
+    chapter: string,
+    pages: number,
+  ) {
+    if (pages <= 0) return
+    const name = `${String(pages).padStart(3, '0')}.jpg`
+    void run(() => editor.deleteTreePage({ volume, chapter, name }))
+  }
+
   function rename(volume: string, oldNumber: string, newNumber: string) {
     const n = newNumber.trim()
     if (n === '' || n === oldNumber) return
@@ -206,12 +235,12 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
           {/* Dica */}
           <div className="border-b border-neutral-800 bg-neutral-950/40 px-4 py-2.5">
             <p className="text-xs leading-relaxed text-neutral-500">
-              Arraste um capítulo para outro volume para movê-lo. Use a capa para{' '}
-              <span className="text-neutral-400">adicionar</span> (cria uma nova 1ª
-              página) ou <span className="text-neutral-400">trocar</span> a 001.jpg.
-              Abra um capítulo para{' '}
-              <span className="text-neutral-400">reordenar</span> ou{' '}
-              <span className="text-neutral-400">apagar</span> páginas. As páginas se
+              Arraste um capítulo para outro volume para movê-lo. Os botões{' '}
+              <span className="text-neutral-400">Volume inteiro</span> no topo de cada
+              volume mexem na capa/páginas do volume (1º/último capítulo).{' '}
+              <span className="text-neutral-400">Abra um capítulo</span> para
+              reordenar/apagar páginas ou mexer na capa e nas 1ª/última páginas{' '}
+              <span className="text-neutral-400">só dele</span>. As páginas se
               renumeram sozinhas. Nada é re-baixado — só a pasta em disco é alterada.
             </p>
           </div>
@@ -318,6 +347,22 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
           onReorder={(order) =>
             reorderPages(preview.volume, preview.folder, order)
           }
+          onAddCover={() =>
+            void setCoverChapter(preview.volume, preview.folder, 'insert')
+          }
+          onReplaceCover={() =>
+            void setCoverChapter(preview.volume, preview.folder, 'replace')
+          }
+          onRemoveFirstPage={() =>
+            removeFirstPageChapter(preview.volume, preview.folder)
+          }
+          onRemoveLastPage={() =>
+            removeLastPageChapter(
+              preview.volume,
+              preview.folder,
+              findChapter(tree, preview.volume, preview.folder)?.pages ?? 0,
+            )
+          }
           onClose={() => setPreview(null)}
         />
       )}
@@ -411,33 +456,36 @@ function VolumeSection({
           {vol.chapters.length} cap.
         </span>
         {!loose && (
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex flex-wrap items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950/40 px-2 py-1">
+            <span className="mr-0.5 font-mono text-[10px] uppercase tracking-wider text-neutral-500">
+              Volume inteiro
+            </span>
             <CoverButton
               label="Adicionar capa"
               icon={<ImagePlus size={11} aria-hidden="true" />}
               onClick={onAddCover}
               disabled={busy || vol.chapters.length === 0}
-              title="Escolhe uma imagem e cria uma nova 1ª página (001.jpg), empurrando as demais"
+              title="Capa do VOLUME: cria uma nova 1ª página (001.jpg) no 1º capítulo, empurrando as demais. Para um capítulo específico, abra-o e use as ações de dentro."
             />
             <CoverButton
               label="Trocar 1ª pág."
               onClick={onReplaceCover}
               disabled={busy || vol.chapters.length === 0}
-              title="Substitui a 001.jpg atual do 1º capítulo, sem empurrar as páginas"
+              title="Capa do VOLUME: substitui a 001.jpg do 1º capítulo, sem empurrar as páginas"
             />
             <CoverButton
               label="Remover 1ª pág."
               icon={<Trash2 size={11} aria-hidden="true" />}
               onClick={onRemoveCover}
               disabled={busy || vol.chapters.length === 0}
-              title="Apaga a 001.jpg (capa) do 1º capítulo e renumera o restante"
+              title="Capa do VOLUME: apaga a 001.jpg do 1º capítulo e renumera o restante"
             />
             <CoverButton
               label="Remover última pág."
               icon={<Trash2 size={11} aria-hidden="true" />}
               onClick={onRemoveLastPage}
               disabled={busy || vol.chapters.length === 0}
-              title="Apaga a última página do último capítulo do volume"
+              title="Apaga a última página do ÚLTIMO capítulo do volume"
             />
           </div>
         )}
@@ -628,6 +676,11 @@ interface ChapterPreviewProps {
   onOpenLightbox: (name: string) => void
   onDeletePage: (name: string) => void
   onReorder: (order: string[]) => void
+  /** Ações que afetam SÓ este capítulo (espelham as globais do volume). */
+  onAddCover: () => void
+  onReplaceCover: () => void
+  onRemoveFirstPage: () => void
+  onRemoveLastPage: () => void
   onClose: () => void
 }
 
@@ -640,6 +693,10 @@ function ChapterPreview({
   onOpenLightbox,
   onDeletePage,
   onReorder,
+  onAddCover,
+  onReplaceCover,
+  onRemoveFirstPage,
+  onRemoveLastPage,
   onClose,
 }: ChapterPreviewProps) {
   // As páginas em disco são sempre 001.jpg…00N.jpg (renumeradas pelo backend).
@@ -717,6 +774,40 @@ function ChapterPreview({
             </button>
           </div>
         </div>
+        {/* Ações que afetam SÓ este capítulo (espelham as globais do volume) */}
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-800 bg-neutral-950/40 px-4 py-2.5">
+          <span className="mr-1 font-mono text-[10px] uppercase tracking-wider text-neutral-500">
+            Só este capítulo
+          </span>
+          <CoverButton
+            label="Adicionar capa"
+            icon={<ImagePlus size={11} aria-hidden="true" />}
+            onClick={onAddCover}
+            disabled={busy}
+            title="Escolhe uma imagem e cria uma nova 1ª página (001.jpg) SÓ neste capítulo, empurrando as demais"
+          />
+          <CoverButton
+            label="Trocar 1ª pág."
+            onClick={onReplaceCover}
+            disabled={busy || pages === 0}
+            title="Substitui a 001.jpg SÓ deste capítulo, sem empurrar as páginas"
+          />
+          <CoverButton
+            label="Remover 1ª pág."
+            icon={<Trash2 size={11} aria-hidden="true" />}
+            onClick={onRemoveFirstPage}
+            disabled={busy || pages === 0}
+            title="Apaga a 1ª página (001.jpg) SÓ deste capítulo e renumera o restante"
+          />
+          <CoverButton
+            label="Remover última pág."
+            icon={<Trash2 size={11} aria-hidden="true" />}
+            onClick={onRemoveLastPage}
+            disabled={busy || pages === 0}
+            title="Apaga a última página SÓ deste capítulo"
+          />
+        </div>
+
         {/* Busca por número da página */}
         {names.length > 0 && (
           <div className="border-b border-neutral-800 px-4 py-2.5">

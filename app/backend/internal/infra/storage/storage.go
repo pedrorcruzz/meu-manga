@@ -441,23 +441,41 @@ func (s *Store) RenameChapter(manga, volFolder, oldNumber, newNumber string) err
 	return os.Rename(src, dst)
 }
 
-// SetCover define a capa do volume como a 001.jpg do seu 1º capítulo (por número).
-// insert=true empurra as páginas em +1 (adicionar); insert=false sobrescreve a
-// 001.jpg (trocar). O jpeg já vem convertido pelo handler.
+// coverChapterDir resolve o diretório do capítulo-alvo das operações de "capa".
+// chapterFolder vazio = 1º capítulo do volume (a capa do volume inteiro);
+// preenchido = aquele capítulo específico (1ª página só daquele capítulo).
+// Rejeita segmentos inseguros (path traversal).
+func (s *Store) coverChapterDir(manga, volFolder, chapterFolder string) (string, error) {
+	if volFolder != "" && !safeSeg(volFolder) {
+		return "", os.ErrNotExist
+	}
+	parent := s.subdir(manga, volFolder)
+	if chapterFolder != "" {
+		if !safeSeg(chapterFolder) {
+			return "", os.ErrNotExist
+		}
+		return filepath.Join(parent, chapterFolder), nil
+	}
+	chFolder, ok := firstChapterFolder(parent)
+	if !ok {
+		return "", os.ErrNotExist
+	}
+	return filepath.Join(parent, chFolder), nil
+}
+
+// SetCover grava a 001.jpg do capítulo-alvo (ver coverChapterDir): sem
+// chapterFolder é a capa do volume (1º capítulo); com ele é a 1ª página daquele
+// capítulo. insert=true empurra as páginas em +1 (adicionar); insert=false
+// sobrescreve a 001.jpg (trocar). O jpeg já vem convertido pelo handler.
 //
 // Antes de tudo, normaliza a numeração para 001..N (renumber): assim, se a pasta
 // veio sem 001.jpg (ex.: a capa do site era 002.jpg), o "trocar" sobrescreve a
 // página certa em vez de criar uma 001 extra (duplicata).
-func (s *Store) SetCover(manga, volFolder string, jpeg []byte, insert bool) error {
-	if volFolder != "" && !safeSeg(volFolder) {
-		return os.ErrNotExist
+func (s *Store) SetCover(manga, volFolder, chapterFolder string, jpeg []byte, insert bool) error {
+	dir, err := s.coverChapterDir(manga, volFolder, chapterFolder)
+	if err != nil {
+		return err
 	}
-	parent := s.subdir(manga, volFolder)
-	chFolder, ok := firstChapterFolder(parent)
-	if !ok {
-		return os.ErrNotExist
-	}
-	dir := filepath.Join(parent, chFolder)
 	if err := renumber(dir); err != nil {
 		return err
 	}
@@ -469,18 +487,13 @@ func (s *Store) SetCover(manga, volFolder string, jpeg []byte, insert bool) erro
 	return os.WriteFile(filepath.Join(dir, "001.jpg"), jpeg, 0o644)
 }
 
-// RemoveCover apaga a 1ª página (capa) do 1º capítulo do volume e renumera o
-// restante. Sem páginas → ErrNoCover.
-func (s *Store) RemoveCover(manga, volFolder string) error {
-	if volFolder != "" && !safeSeg(volFolder) {
-		return os.ErrNotExist
+// RemoveCover apaga a 1ª página do capítulo-alvo (ver coverChapterDir) e
+// renumera o restante. Sem páginas → ErrNoCover.
+func (s *Store) RemoveCover(manga, volFolder, chapterFolder string) error {
+	dir, err := s.coverChapterDir(manga, volFolder, chapterFolder)
+	if err != nil {
+		return err
 	}
-	parent := s.subdir(manga, volFolder)
-	chFolder, ok := firstChapterFolder(parent)
-	if !ok {
-		return os.ErrNotExist
-	}
-	dir := filepath.Join(parent, chFolder)
 	names := imagesIn(dir)
 	if len(names) == 0 {
 		return domain.ErrNoCover

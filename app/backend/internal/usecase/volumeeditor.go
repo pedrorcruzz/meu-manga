@@ -10,8 +10,8 @@ type EditStore interface {
 	ReadRawPage(manga, volFolder, chapterFolder, name string) ([]byte, error)
 	MoveChapter(manga, fromVol, toVol, chapterFolder string) error
 	RenameChapter(manga, volFolder, oldNumber, newNumber string) error
-	SetCover(manga, volFolder string, jpeg []byte, insert bool) error
-	RemoveCover(manga, volFolder string) error
+	SetCover(manga, volFolder, chapterFolder string, jpeg []byte, insert bool) error
+	RemoveCover(manga, volFolder, chapterFolder string) error
 	DeleteTreePage(manga, volFolder, chapterFolder, name string) error
 	ReorderPages(manga, volFolder, chapterFolder string, order []string) error
 }
@@ -78,25 +78,27 @@ func (e *MangaEditor) Rename(jobID, volFolder, oldNumber, newNumber string) (dom
 	return e.store.ScanManga(title)
 }
 
-// SetCover adiciona (insert) ou troca (replace) a capa de um volume.
-func (e *MangaEditor) SetCover(jobID, volFolder string, jpeg []byte, insert bool) (domain.MangaTree, error) {
+// SetCover adiciona (insert) ou troca (replace) a 001.jpg do alvo. chapterFolder
+// vazio = capa do volume (1º capítulo); preenchido = 1ª página só daquele capítulo.
+func (e *MangaEditor) SetCover(jobID, volFolder, chapterFolder string, jpeg []byte, insert bool) (domain.MangaTree, error) {
 	title, err := e.guard(jobID)
 	if err != nil {
 		return domain.MangaTree{}, err
 	}
-	if err := e.store.SetCover(title, volFolder, jpeg, insert); err != nil {
+	if err := e.store.SetCover(title, volFolder, chapterFolder, jpeg, insert); err != nil {
 		return domain.MangaTree{}, err
 	}
 	return e.store.ScanManga(title)
 }
 
-// RemoveCover apaga a capa de um volume e devolve a árvore atualizada.
-func (e *MangaEditor) RemoveCover(jobID, volFolder string) (domain.MangaTree, error) {
+// RemoveCover apaga a 1ª página do alvo e devolve a árvore atualizada.
+// chapterFolder vazio = capa do volume (1º capítulo); preenchido = aquele capítulo.
+func (e *MangaEditor) RemoveCover(jobID, volFolder, chapterFolder string) (domain.MangaTree, error) {
 	title, err := e.guard(jobID)
 	if err != nil {
 		return domain.MangaTree{}, err
 	}
-	if err := e.store.RemoveCover(title, volFolder); err != nil {
+	if err := e.store.RemoveCover(title, volFolder, chapterFolder); err != nil {
 		return domain.MangaTree{}, err
 	}
 	return e.store.ScanManga(title)

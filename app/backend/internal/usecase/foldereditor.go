@@ -86,17 +86,19 @@ func (e *FolderEditor) Rename(path, volFolder, oldNumber, newNumber string) (dom
 	})
 }
 
-// SetCover adiciona (insert) ou troca (replace) a capa de um volume.
-func (e *FolderEditor) SetCover(path, volFolder string, jpeg []byte, insert bool) (domain.MangaTree, error) {
+// SetCover adiciona (insert) ou troca (replace) a 001.jpg do alvo. chapterFolder
+// vazio = capa do volume (1º capítulo); preenchido = 1ª página só daquele capítulo.
+func (e *FolderEditor) SetCover(path, volFolder, chapterFolder string, jpeg []byte, insert bool) (domain.MangaTree, error) {
 	return e.mutate(path, func(st EditStore, manga string) error {
-		return st.SetCover(manga, volFolder, jpeg, insert)
+		return st.SetCover(manga, volFolder, chapterFolder, jpeg, insert)
 	})
 }
 
-// RemoveCover apaga a capa de um volume e devolve a árvore atualizada.
-func (e *FolderEditor) RemoveCover(path, volFolder string) (domain.MangaTree, error) {
+// RemoveCover apaga a 1ª página do alvo e devolve a árvore atualizada.
+// chapterFolder vazio = capa do volume (1º capítulo); preenchido = aquele capítulo.
+func (e *FolderEditor) RemoveCover(path, volFolder, chapterFolder string) (domain.MangaTree, error) {
 	return e.mutate(path, func(st EditStore, manga string) error {
-		return st.RemoveCover(manga, volFolder)
+		return st.RemoveCover(manga, volFolder, chapterFolder)
 	})
 }
 

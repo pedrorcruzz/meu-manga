@@ -253,12 +253,14 @@ func (s *Server) renameChapter(w http.ResponseWriter, r *http.Request) {
 }
 
 type coverReq struct {
-	Volume string `json:"volume"`
-	Image  string `json:"image"` // data URL (qualquer formato); convertido para JPEG
-	Mode   string `json:"mode"`  // "insert" (adicionar, empurra páginas) | "replace" (trocar)
+	Volume  string `json:"volume"`
+	Chapter string `json:"chapter"` // pasta do capítulo ("" = capa do volume, 1º capítulo)
+	Image   string `json:"image"`   // data URL (qualquer formato); convertido para JPEG
+	Mode    string `json:"mode"`    // "insert" (adicionar, empurra páginas) | "replace" (trocar)
 }
 
-// putCover adiciona ou troca a capa de um volume (001.jpg do 1º capítulo).
+// putCover adiciona ou troca a 001.jpg do alvo: sem chapter é a capa do volume
+// (1º capítulo); com chapter é a 1ª página só daquele capítulo.
 func (s *Server) putCover(w http.ResponseWriter, r *http.Request) {
 	var req coverReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Image == "" {
@@ -270,7 +272,7 @@ func (s *Server) putCover(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid image")
 		return
 	}
-	tree, err := s.deps.Editor.SetCover(r.PathValue("id"), req.Volume, jpeg, req.Mode != "replace")
+	tree, err := s.deps.Editor.SetCover(r.PathValue("id"), req.Volume, req.Chapter, jpeg, req.Mode != "replace")
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -315,9 +317,11 @@ func (s *Server) reorderPages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tree)
 }
 
-// deleteCover remove a capa de um volume (?vol=).
+// deleteCover remove a 1ª página do alvo (?vol=&chap=). Sem chap = capa do
+// volume (1º capítulo); com chap = 1ª página só daquele capítulo.
 func (s *Server) deleteCover(w http.ResponseWriter, r *http.Request) {
-	tree, err := s.deps.Editor.RemoveCover(r.PathValue("id"), r.URL.Query().Get("vol"))
+	q := r.URL.Query()
+	tree, err := s.deps.Editor.RemoveCover(r.PathValue("id"), q.Get("vol"), q.Get("chap"))
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -416,10 +420,11 @@ func (s *Server) folderRename(w http.ResponseWriter, r *http.Request) {
 }
 
 type folderCoverReq struct {
-	Path   string `json:"path"`
-	Volume string `json:"volume"`
-	Image  string `json:"image"`
-	Mode   string `json:"mode"`
+	Path    string `json:"path"`
+	Volume  string `json:"volume"`
+	Chapter string `json:"chapter"` // pasta do capítulo ("" = capa do volume, 1º capítulo)
+	Image   string `json:"image"`
+	Mode    string `json:"mode"`
 }
 
 func (s *Server) folderPutCover(w http.ResponseWriter, r *http.Request) {
@@ -433,7 +438,7 @@ func (s *Server) folderPutCover(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid image")
 		return
 	}
-	tree, err := s.deps.FolderEditor.SetCover(req.Path, req.Volume, jpeg, req.Mode != "replace")
+	tree, err := s.deps.FolderEditor.SetCover(req.Path, req.Volume, req.Chapter, jpeg, req.Mode != "replace")
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -443,7 +448,7 @@ func (s *Server) folderPutCover(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) folderDeleteCover(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	tree, err := s.deps.FolderEditor.RemoveCover(q.Get("path"), q.Get("vol"))
+	tree, err := s.deps.FolderEditor.RemoveCover(q.Get("path"), q.Get("vol"), q.Get("chap"))
 	if err != nil {
 		writeUseErr(w, err)
 		return
