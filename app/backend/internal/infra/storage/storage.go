@@ -152,6 +152,15 @@ func renumber(dir string) error {
 }
 
 func isImageName(name string) bool {
+	// Ignora dotfiles/AppleDouble ("._001.jpg", ".DS_Store"). Em discos não-APFS
+	// (exFAT/FAT de SSDs externos, pendrives, rede) o macOS cria um sidecar
+	// "._<arquivo>" ao lado de cada página; como tem extensão .jpg, sem este
+	// guarda ele contaria como página real — inflando a contagem (a galeria pede
+	// páginas que não existem → 404) e, por ordenar antes de 001.jpg, virando a
+	// capa (bytes que o navegador não decodifica). Vale para qualquer caminho.
+	if isHidden(name) {
+		return false
+	}
 	ext := strings.ToLower(filepath.Ext(name))
 	return ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp"
 }

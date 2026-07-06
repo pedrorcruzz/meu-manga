@@ -72,6 +72,12 @@ type ChapterProgress = { page: number; totalPages: number }
 type LiveProgress = Record<string, Record<string, ChapterProgress>>
 type FilterMode = 'all' | 'active' | 'done'
 
+// Estado de download de um volume pendente, derivado do job que o baixa:
+// idle = ainda não baixado · downloading = na fila/baixando · done = concluído ·
+// failed = falhou/cancelado (dá para tentar de novo).
+type VolumeDlStatus = 'idle' | 'downloading' | 'done' | 'failed'
+type VolumeFilter = 'all' | 'idle' | 'downloading' | 'done'
+
 export const Route = createFileRoute('/downloads')({
   component: DownloadsPage,
 })
@@ -93,6 +99,10 @@ function DownloadsPage() {
   // Seleção de volumes vinda da obra, aguardando o usuário escolher o que baixar.
   const [pending, setPending] = useState<PendingDownload | null>(null)
   const [staging, setStaging] = useState(false)
+  // Nome do volume → jobId criado para baixá-lo. É daqui que sai o status de cada
+  // capa (baixando/baixado): cruzamos o jobId com a lista de jobs. Some junto com
+  // a seleção pendente (ambos vivem só nesta sessão da tela).
+  const [volumeJobs, setVolumeJobs] = useState<Record<string, string>>({})
   // Formato do nome dos volumes — mesmo store da aba de montagem (persistido no
   // SQLite). Mexer aqui reflete lá e vice-versa; prevalece a última escolha.
   const nameFormat = useVolumeFormat()
@@ -157,6 +167,26 @@ function DownloadsPage() {
   }, [isSessionError, refreshSession])
 
   const list = data ?? []
+
+  // Status de cada volume pendente a partir do job que o baixou. Sem job = idle
+  // (ainda não clicou). Job sumiu da lista mas registramos = ainda entrando na
+  // fila, tratamos como "baixando".
+  const volumeStatuses = useMemo(() => {
+    const m: Record<string, VolumeDlStatus> = {}
+    for (const [name, jobId] of Object.entries(volumeJobs)) {
+      const job = list.find((j) => j.jobId === jobId)
+      if (!job) {
+        m[name] = 'downloading'
+      } else if (job.status === 'completed') {
+        m[name] = 'done'
+      } else if (job.status === 'failed' || job.status === 'canceled') {
+        m[name] = 'failed'
+      } else {
+        m[name] = 'downloading'
+      }
+    }
+    return m
+  }, [volumeJobs, list])
 
   async function cancel(id: string) {
     try {
@@ -255,12 +285,13 @@ function DownloadsPage() {
       volumes: vols,
     }
     try {
-      await api.createJob(body)
-      const sent = new Set(vols.map((v) => v.name))
-      setPending((prev) => {
-        if (!prev) return prev
-        const left = prev.volumes.filter((v) => !sent.has(v.name))
-        return left.length > 0 ? { ...prev, volumes: left } : null
+      const { jobId } = await api.createJob(body)
+      // Não removemos mais o volume da lista: ele fica visível e passa a exibir
+      // o estado (baixando → baixado). Associamos cada volume ao job criado.
+      setVolumeJobs((prev) => {
+        const next = { ...prev }
+        for (const v of vols) next[v.name] = jobId
+        return next
       })
     } catch (err) {
       if (err instanceof NoSessionError) refreshSession()
@@ -406,10 +437,17 @@ function DownloadsPage() {
             <PendingVolumesPanel
               pending={pending}
               busy={staging}
+              statuses={volumeStatuses}
               nameFormat={nameFormat}
               onChangeFormat={changeFormat}
               onDownloadVolume={(v) => void startVolumes([v])}
-              onDownloadAll={() => void startVolumes(pending.volumes)}
+              onDownloadAll={() =>
+                void startVolumes(
+                  pending.volumes.filter(
+                    (v) => volumeStatuses[v.name] !== 'done',
+                  ),
+                )
+              }
               onDiscard={() => setPending(null)}
             />
             {/* Direita: downloads */}
@@ -466,6 +504,7 @@ function numberRange(chs: { number: string }[]): string {
 function PendingVolumesPanel({
   pending,
   busy,
+  statuses,
   nameFormat,
   onChangeFormat,
   onDownloadVolume,
@@ -474,6 +513,7 @@ function PendingVolumesPanel({
 }: {
   pending: PendingDownload
   busy: boolean
+  statuses: Record<string, VolumeDlStatus>
   nameFormat: VolumeNameFormat
   onChangeFormat: (fmt: VolumeNameFormat) => void
   onDownloadVolume: (v: VolumeInput) => void
@@ -488,17 +528,42 @@ function PendingVolumesPanel({
   // Aba ativa: "safe" (padrão, 1 volume por vez) x "all" (tudo de uma vez).
   const [tab, setTab] = useState<'safe' | 'all'>('safe')
 
+  // Filtro por estado de download (todos/não baixados/baixando/baixados).
+  const [statusFilter, setStatusFilter] = useState<VolumeFilter>('all')
+  const statusOf = (v: VolumeInput): VolumeDlStatus => statuses[v.name] ?? 'idle'
+
+  // Contagens por estado, para os chips de filtro.
+  const counts = useMemo(() => {
+    const c = { all: pending.volumes.length, idle: 0, downloading: 0, done: 0 }
+    for (const v of pending.volumes) {
+      const s = statuses[v.name] ?? 'idle'
+      // "failed" volta a contar como não baixado (dá para tentar de novo).
+      if (s === 'downloading') c.downloading++
+      else if (s === 'done') c.done++
+      else c.idle++
+    }
+    return c
+  }, [pending.volumes, statuses])
+
   // Busca por volume (nome ou número de capítulo).
   const [query, setQuery] = useState('')
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return pending.volumes
-    return pending.volumes.filter(
-      (v) =>
-        v.name.toLowerCase().includes(q) ||
-        v.chapters.some((c) => c.number.toLowerCase().includes(q)),
-    )
-  }, [pending.volumes, query])
+    return pending.volumes.filter((v) => {
+      if (q) {
+        const hit =
+          v.name.toLowerCase().includes(q) ||
+          v.chapters.some((c) => c.number.toLowerCase().includes(q))
+        if (!hit) return false
+      }
+      if (statusFilter === 'all') return true
+      const s = statuses[v.name] ?? 'idle'
+      if (statusFilter === 'done') return s === 'done'
+      if (statusFilter === 'downloading') return s === 'downloading'
+      // "não baixados": idle + failed
+      return s === 'idle' || s === 'failed'
+    })
+  }, [pending.volumes, query, statusFilter, statuses])
 
   // Renderiza as capas em lotes (scroll infinito) para aguentar coleções grandes.
   const { visible, sentinelRef, hasMore } = useIncremental(filtered, 48)
@@ -684,19 +749,72 @@ function PendingVolumesPanel({
         )}
       </div>
 
+      {/* Filtro por estado de download */}
+      <div className="flex flex-wrap gap-1.5">
+        {(
+          [
+            { key: 'all', label: 'Todos', count: counts.all },
+            { key: 'idle', label: 'Não baixados', count: counts.idle },
+            { key: 'downloading', label: 'Baixando', count: counts.downloading },
+            { key: 'done', label: 'Baixados', count: counts.done },
+          ] as const
+        ).map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            onClick={() => setStatusFilter(f.key)}
+            aria-pressed={statusFilter === f.key}
+            className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+              statusFilter === f.key
+                ? 'border-violet-500 bg-violet-600/30 text-violet-100'
+                : 'border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-neutral-200'
+            }`}
+          >
+            {f.label}
+            <span
+              className={`rounded-full px-1.5 text-[10px] tabular-nums ${
+                statusFilter === f.key
+                  ? 'bg-violet-500/40 text-violet-50'
+                  : 'bg-neutral-800 text-neutral-500'
+              }`}
+            >
+              {f.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Grade de volumes (rolagem interna para não esticar a página).
           No desktop preenche a coluna; no mobile mantém o teto de 38rem. */}
       <div className="max-h-[38rem] overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin] lg:max-h-none lg:min-h-0 lg:flex-1">
         {filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-neutral-600">
-            Nenhum volume encontrado para “{query}”.
+            {query
+              ? `Nenhum volume encontrado para “${query}”.`
+              : statusFilter === 'done'
+                ? 'Nenhum volume baixado ainda.'
+                : statusFilter === 'downloading'
+                  ? 'Nenhum volume baixando agora.'
+                  : statusFilter === 'idle'
+                    ? 'Todos os volumes já foram baixados.'
+                    : 'Nenhum volume.'}
           </p>
         ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {visible.map((v) => (
+          {visible.map((v) => {
+          const s = statusOf(v)
+          const done = s === 'done'
+          const downloading = s === 'downloading'
+          return (
           <div
             key={v.name}
-            className="flex flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/60"
+            className={`flex flex-col overflow-hidden rounded-xl border bg-neutral-900/60 transition-colors ${
+              done
+                ? 'border-emerald-500/70 ring-1 ring-emerald-500/40'
+                : downloading
+                  ? 'border-sky-600/60'
+                  : 'border-neutral-800'
+            }`}
           >
             <div
               className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden ${
@@ -715,7 +833,7 @@ function PendingVolumesPanel({
                 <div className="flex flex-col items-center gap-1.5 px-2 text-center">
                   <BookOpen
                     size={20}
-                    className="text-neutral-600"
+                    className={done ? 'text-emerald-400' : 'text-neutral-600'}
                     aria-hidden="true"
                   />
                   <span className="font-mono text-sm font-bold text-neutral-300">
@@ -724,6 +842,19 @@ function PendingVolumesPanel({
                 </div>
               )}
               <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
+              {/* Selo de estado sobre a capa */}
+              {done && (
+                <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
+                  <CheckCircle2 size={11} aria-hidden="true" />
+                  Baixado
+                </span>
+              )}
+              {downloading && (
+                <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
+                  <Loader2 size={11} className="animate-spin" aria-hidden="true" />
+                  Baixando
+                </span>
+              )}
             </div>
             <div className="space-y-0.5 border-t border-neutral-800 px-2.5 py-2">
               <p className="truncate font-mono text-xs font-bold text-neutral-100">
@@ -737,17 +868,39 @@ function PendingVolumesPanel({
                 {v.chapters.length === 1 ? 'capítulo' : 'capítulos'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => onDownloadVolume(v)}
-              disabled={busy}
-              className="flex items-center justify-center gap-1.5 border-t border-neutral-800 bg-neutral-800/40 px-2.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Download size={12} aria-hidden="true" />
-              Baixar
-            </button>
+            {done ? (
+              <div className="flex items-center justify-center gap-1.5 border-t border-emerald-500/40 bg-emerald-600/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-300">
+                <CheckCircle2 size={12} aria-hidden="true" />
+                Baixado
+              </div>
+            ) : downloading ? (
+              <div className="flex items-center justify-center gap-1.5 border-t border-sky-600/40 bg-sky-600/15 px-2.5 py-1.5 text-xs font-semibold text-sky-300">
+                <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+                Baixando…
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onDownloadVolume(v)}
+                disabled={busy}
+                className="flex items-center justify-center gap-1.5 border-t border-neutral-800 bg-neutral-800/40 px-2.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {s === 'failed' ? (
+                  <>
+                    <RotateCw size={12} aria-hidden="true" />
+                    Baixar de novo
+                  </>
+                ) : (
+                  <>
+                    <Download size={12} aria-hidden="true" />
+                    Baixar
+                  </>
+                )}
+              </button>
+            )}
           </div>
-          ))}
+          )
+          })}
         </div>
         )}
         {hasMore && (

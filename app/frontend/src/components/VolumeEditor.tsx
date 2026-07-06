@@ -12,6 +12,7 @@ import {
   ImagePlus,
   Layers,
   Loader2,
+  Search,
   Trash2,
   X,
 } from 'lucide-react'
@@ -135,6 +136,17 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
     void run(() => editor.removeCover(volume))
   }
 
+  // Remove a última página do volume: a última página do último capítulo. O
+  // backend renumera sozinho (aqui já é o fim, então nada se desloca).
+  function removeLastPage(vol: TreeVolume) {
+    const last = vol.chapters[vol.chapters.length - 1]
+    if (!last || last.pages <= 0) return
+    const name = `${String(last.pages).padStart(3, '0')}.jpg`
+    void run(() =>
+      editor.deleteTreePage({ volume: vol.folder, chapter: last.folder, name }),
+    )
+  }
+
   function rename(volume: string, oldNumber: string, newNumber: string) {
     const n = newNumber.trim()
     if (n === '' || n === oldNumber) return
@@ -243,6 +255,7 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
                     onAddCover={() => void setCover(vol.folder, 'insert')}
                     onReplaceCover={() => void setCover(vol.folder, 'replace')}
                     onRemoveCover={() => removeCover(vol.folder)}
+                    onRemoveLastPage={() => removeLastPage(vol)}
                     onRename={(oldN, newN) => rename(vol.folder, oldN, newN)}
                     busy={busy}
                     rev={rev}
@@ -350,6 +363,7 @@ interface VolumeSectionProps {
   onAddCover?: () => void
   onReplaceCover?: () => void
   onRemoveCover?: () => void
+  onRemoveLastPage?: () => void
 }
 
 function VolumeSection({
@@ -368,6 +382,7 @@ function VolumeSection({
   onAddCover,
   onReplaceCover,
   onRemoveCover,
+  onRemoveLastPage,
 }: VolumeSectionProps) {
   const dragging = drag != null
   return (
@@ -416,6 +431,13 @@ function VolumeSection({
               onClick={onRemoveCover}
               disabled={busy || vol.chapters.length === 0}
               title="Apaga a 001.jpg (capa) do 1º capítulo e renumera o restante"
+            />
+            <CoverButton
+              label="Remover última pág."
+              icon={<Trash2 size={11} aria-hidden="true" />}
+              onClick={onRemoveLastPage}
+              disabled={busy || vol.chapters.length === 0}
+              title="Apaga a última página do último capítulo do volume"
             />
           </div>
         )}
@@ -629,6 +651,16 @@ function ChapterPreview({
   const [overIdx, setOverIdx] = useState<number | null>(null)
   // Página aguardando confirmação de exclusão (popup da própria interface).
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  // Busca por número da página (ex.: "45" ou "045"). Mantemos o índice real de
+  // cada página (para reordenar/apagar), só escondemos as que não batem.
+  const [pageQuery, setPageQuery] = useState('')
+  const q = pageQuery.trim()
+  const matchesQuery = (i: number) => {
+    if (!q) return true
+    const n = String(i + 1)
+    return n.includes(q) || n.padStart(3, '0').includes(q)
+  }
+  const matchCount = q ? names.filter((_, i) => matchesQuery(i)).length : names.length
 
   // Reposiciona a página de `from` para `to` (envia a nova ordem ao backend).
   function moveTo(from: number, to: number) {
@@ -685,14 +717,50 @@ function ChapterPreview({
             </button>
           </div>
         </div>
+        {/* Busca por número da página */}
+        {names.length > 0 && (
+          <div className="border-b border-neutral-800 px-4 py-2.5">
+            <div className="relative">
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"
+                aria-hidden="true"
+              />
+              <input
+                type="text"
+                inputMode="numeric"
+                value={pageQuery}
+                onChange={(e) => setPageQuery(e.target.value)}
+                placeholder="Filtrar por número da página… (ex: 45, 045)"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 py-2 pl-9 pr-9 text-sm placeholder:text-neutral-600 focus:border-neutral-600 focus:outline-none"
+                aria-label="Filtrar páginas por número"
+              />
+              {pageQuery && (
+                <button
+                  type="button"
+                  onClick={() => setPageQuery('')}
+                  aria-label="Limpar busca"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-neutral-600 transition-colors hover:text-neutral-300"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         <div className="overflow-y-auto p-4">
           {names.length === 0 ? (
             <p className="py-8 text-center text-sm text-neutral-500">
               Capítulo sem páginas.
             </p>
+          ) : matchCount === 0 ? (
+            <p className="py-8 text-center text-sm text-neutral-500">
+              Nenhuma página com “{q}”.
+            </p>
           ) : (
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-              {names.map((name, i) => (
+              {names.map((name, i) =>
+                matchesQuery(i) ? (
                 <div
                   key={name}
                   draggable={!busy}
@@ -763,7 +831,8 @@ function ChapterPreview({
                     </PageBtn>
                   </div>
                 </div>
-              ))}
+                ) : null,
+              )}
             </div>
           )}
         </div>
