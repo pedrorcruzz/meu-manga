@@ -18,6 +18,11 @@ import {
 import { type Chapter } from '~/api/client'
 import type { Volume } from './VolumeCard'
 import { useIncremental } from '~/hooks/useIncremental'
+import {
+  DEFAULT_VOLUME_FORMAT,
+  formatVolumeName,
+  type VolumeNameFormat,
+} from '~/lib/volumeName'
 
 /** Lê um arquivo de imagem como data URL base64 (qualquer formato). */
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -102,6 +107,8 @@ interface VolumeSelectModalProps {
   volumes: Volume[]
   /** Capítulos que a fonte não colocou em nenhum volume. */
   leftoverChapters?: Chapter[]
+  /** Formato de nome para os volumes montados aqui (leftover). */
+  nameFormat?: VolumeNameFormat
   /** Recebe apenas os volumes marcados pelo usuário (propostos + montados aqui). */
   onConfirm: (selected: Volume[]) => void
   onClose: () => void
@@ -111,6 +118,7 @@ export function VolumeSelectModal({
   title,
   volumes,
   leftoverChapters = [],
+  nameFormat = DEFAULT_VOLUME_FORMAT,
   onConfirm,
   onClose,
 }: VolumeSelectModalProps) {
@@ -315,7 +323,7 @@ export function VolumeSelectModal({
     for (let i = 0; i < chosen.length; i += n) {
       created.push({
         id: `extra-${++extraIdRef.current}`,
-        name: String(start++).padStart(3, '0'),
+        name: formatVolumeName(start++, nameFormat),
         chapters: chosen.slice(i, i + n),
         coverImage: null,
       })

@@ -21,14 +21,22 @@ import { VolumeSelectModal } from './VolumeSelectModal'
 import { FilterChip } from './FilterChip'
 import { HelpButton } from './HelpButton'
 import { useIncremental } from '~/hooks/useIncremental'
+import {
+  DEFAULT_VOLUME_FORMAT,
+  DIGITS_OPTIONS,
+  PREFIX_OPTIONS,
+  formatVolumeName,
+  inferVolumeFormat,
+  reformatVolumeName,
+  volumeNameExample,
+  type VolumeDigits,
+  type VolumeNameFormat,
+  type VolumePrefix,
+} from '~/lib/volumeName'
 
 let _volCounter = 0
 function nextVolId(): string {
   return `vol-${++_volCounter}`
-}
-
-function padName(index: number): string {
-  return String(index + 1).padStart(3, '0')
 }
 
 /**
@@ -46,7 +54,10 @@ function parseSakuraVolumeNumber(label: string): number | null {
  * - Ordena capítulos numericamente dentro de cada grupo.
  * - Capítulos com `volume === ""` são ignorados.
  */
-function buildSakuraVolumes(chapters: Chapter[]): Volume[] {
+function buildSakuraVolumes(
+  chapters: Chapter[],
+  fmt: VolumeNameFormat,
+): Volume[] {
   const groups = new Map<string, Chapter[]>()
   const groupOrder: string[] = []
 
@@ -66,7 +77,7 @@ function buildSakuraVolumes(chapters: Chapter[]): Volume[] {
       (a, b) => parseFloat(a.number) - parseFloat(b.number),
     )
     const num = parseSakuraVolumeNumber(label)
-    const name = num !== null ? String(num).padStart(3, '0') : label
+    const name = num !== null ? formatVolumeName(num, fmt) : label
     return {
       id: nextVolId(),
       name,
@@ -101,6 +112,9 @@ export function VolumeBuilder({
   thumbUrl,
 }: VolumeBuilderProps) {
   const [volumes, setVolumes] = useState<Volume[]>([])
+  // Formato de nome dos volumes (prefixo + forma dos números). Padrão: "001".
+  const [nameFormat, setNameFormat] =
+    useState<VolumeNameFormat>(DEFAULT_VOLUME_FORMAT)
   const [leftFilter, setLeftFilter] = useState('')
   const [leftSelected, setLeftSelected] = useState<Set<string>>(new Set())
   const [targetVolId, setTargetVolId] = useState<string>('')
@@ -162,6 +176,10 @@ export function VolumeBuilder({
             coverImage: v.coverImage ?? null,
           })),
         )
+        // Reflete no seletor o formato de nome usado na montagem salva.
+        const named = m.volumes.find((v) => /\d/.test(v.name))
+        const inferred = named ? inferVolumeFormat(named.name) : null
+        if (inferred) setNameFormat(inferred)
         setCurrentVolIdx(0)
         setSaved(true)
       })
@@ -298,7 +316,7 @@ export function VolumeBuilder({
    * sem volume (lançamentos recentes) para o usuário montar como quiser.
    */
   function openSmartPopup() {
-    const sakuraVols = buildSakuraVolumes(chapters)
+    const sakuraVols = buildSakuraVolumes(chapters, nameFormat)
     const inProposed = new Set(
       sakuraVols.flatMap((v) => v.chapters.map((c) => c.id)),
     )
@@ -328,7 +346,7 @@ export function VolumeBuilder({
   function addEmptyVolume() {
     const newVol: Volume = {
       id: nextVolId(),
-      name: padName(volumes.length),
+      name: formatVolumeName(volumes.length + 1, nameFormat),
       chapters: [],
       coverImage: null,
     }
@@ -357,6 +375,15 @@ export function VolumeBuilder({
 
   function renameVolume(id: string, name: string) {
     setVolumes((prev) => prev.map((v) => (v.id === id ? { ...v, name } : v)))
+  }
+
+  // Troca o formato do nome e reaplica a todos os volumes já montados,
+  // preservando o número intrínseco de cada um (só muda prefixo/zeros).
+  function changeNameFormat(fmt: VolumeNameFormat) {
+    setNameFormat(fmt)
+    setVolumes((prev) =>
+      prev.map((v) => ({ ...v, name: reformatVolumeName(v.name, fmt) })),
+    )
   }
 
   function removeChapterFromVolume(volId: string, chapterId: string) {
@@ -575,6 +602,68 @@ export function VolumeBuilder({
               montar do seu jeito, sem seguir os volumes da fonte.
             </HelpButton>
           </div>
+        </div>
+
+        {/* Formato do nome dos volumes (prefixo + forma dos números) */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-neutral-800/60 pt-3">
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-neutral-500">
+              Formato do nome
+            </span>
+            <HelpButton label="Como funciona o formato do nome?">
+              Define como cada volume é nomeado - e também o nome da pasta no
+              disco (ex.: Manga 001). Escolha o prefixo e a forma dos números;
+              a numeração continua incremental. Vale para o Volume Inteligente
+              e o manual, e você ainda pode renomear cada volume
+              individualmente depois.
+            </HelpButton>
+          </div>
+          <label className="flex items-center gap-1.5 text-xs text-neutral-400">
+            Prefixo
+            <select
+              value={nameFormat.prefix}
+              onChange={(e) =>
+                changeNameFormat({
+                  ...nameFormat,
+                  prefix: e.target.value as VolumePrefix,
+                })
+              }
+              className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-neutral-500 focus:outline-none"
+              aria-label="Prefixo do nome do volume"
+            >
+              {PREFIX_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-neutral-400">
+            Números
+            <select
+              value={nameFormat.digits}
+              onChange={(e) =>
+                changeNameFormat({
+                  ...nameFormat,
+                  digits: Number(e.target.value) as VolumeDigits,
+                })
+              }
+              className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-neutral-500 focus:outline-none"
+              aria-label="Forma dos números do volume"
+            >
+              {DIGITS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="ml-auto flex items-center gap-1.5 font-mono text-xs text-neutral-500">
+            exemplo:
+            <span className="rounded border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-neutral-200">
+              {volumeNameExample(nameFormat)}
+            </span>
+          </span>
         </div>
       </div>
 
@@ -1087,6 +1176,7 @@ export function VolumeBuilder({
           title={pending.title}
           volumes={pending.volumes}
           leftoverChapters={pending.leftover}
+          nameFormat={nameFormat}
           onConfirm={applyPending}
           onClose={() => setPending(null)}
         />
