@@ -66,6 +66,16 @@ export function volumeNameExample(fmt: VolumeNameFormat): string {
 }
 
 /**
+ * Número intrínseco de um volume a partir do seu nome ("001", "Volume 01",
+ * "V15" → 1, 1, 15). Independe de prefixo/zeros à esquerda — serve para casar o
+ * mesmo volume entre a seleção pendente e a pasta em disco. null = sem dígitos.
+ */
+export function volumeNumber(name: string): number | null {
+  const m = name.match(/\d+/)
+  return m ? parseInt(m[0], 10) : null
+}
+
+/**
  * Deduz o formato a partir de um nome já gerado (para o seletor refletir uma
  * montagem carregada do disco). Heurística boa o suficiente para as saídas do
  * próprio app; retorna null quando o nome não tem número.

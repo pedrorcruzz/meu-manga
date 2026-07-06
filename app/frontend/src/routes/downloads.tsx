@@ -35,6 +35,7 @@ import {
   type DownloadRequest,
   type JobStatus,
   type JobSummary,
+  type MangaTree,
   type VolumeInput,
 } from '~/api/client'
 import { useDownloadEvents } from '~/api/events'
@@ -55,9 +56,11 @@ import {
 } from '~/lib/volumeFormatStore'
 import {
   DIGITS_OPTIONS,
+  formatVolumeName,
   PREFIX_OPTIONS,
   reformatVolumeName,
   volumeNameExample,
+  volumeNumber,
   type VolumeDigits,
   type VolumeNameFormat,
   type VolumePrefix,
@@ -76,6 +79,25 @@ type FilterMode = 'all' | 'active' | 'done'
 // idle = ainda não baixado · downloading = na fila/baixando · done = concluído ·
 // failed = falhou/cancelado (dá para tentar de novo).
 type VolumeDlStatus = 'idle' | 'downloading' | 'done' | 'failed'
+
+// Número do volume → URL da capa real no disco (1ª página do 1º capítulo). Lê a
+// árvore da pasta central de um job do mangá; como a árvore traz TODOS os volumes
+// do mangá, um job só já cobre a coleção inteira já baixada (de qualquer sessão).
+function diskCoversFromTree(
+  tree: MangaTree | null,
+  jobId: string,
+): Record<number, string> {
+  const m: Record<number, string> = {}
+  if (!tree || !jobId) return m
+  for (const vol of tree.volumes) {
+    const num = volumeNumber(vol.name) ?? volumeNumber(vol.folder)
+    if (num == null) continue
+    const chap = vol.chapters.find((c) => c.firstPage)
+    if (!chap) continue
+    m[num] = api.mangaPageUrl(jobId, vol.folder, chap.folder, chap.firstPage)
+  }
+  return m
+}
 type VolumeFilter = 'all' | 'idle' | 'downloading' | 'done'
 
 export const Route = createFileRoute('/downloads')({
@@ -168,11 +190,40 @@ function DownloadsPage() {
 
   const list = data ?? []
 
-  // Status de cada volume pendente a partir do job que o baixou. Sem job = idle
-  // (ainda não clicou). Job sumiu da lista mas registramos = ainda entrando na
-  // fila, tratamos como "baixando".
+  // Job já existente do mangá pendente (qualquer sessão): usado para ler a pasta
+  // central e saber quais volumes já estão no disco, com a capa real. Preferimos
+  // um job com capítulos concluídos; a árvore dele traz a coleção inteira.
+  const pendingJob = useMemo(() => {
+    if (!pending) return null
+    const same = list.filter(
+      (j) =>
+        j.source === pending.source &&
+        (j.slug ? j.slug === pending.slug : j.title === pending.title),
+    )
+    return same.find((j) => j.completedChapters > 0) ?? same[0] ?? null
+  }, [pending, list])
+
+  const { data: pendingTree } = useAsync(
+    () =>
+      pendingJob ? api.getMangaTree(pendingJob.jobId) : Promise.resolve(null),
+    [pendingJob?.jobId, listTick],
+  )
+
+  // Número do volume → capa real no disco (baixados de qualquer sessão).
+  const diskCovers = useMemo(
+    () => diskCoversFromTree(pendingTree, pendingJob?.jobId ?? ''),
+    [pendingTree, pendingJob?.jobId],
+  )
+
+  // Status de cada volume pendente. Base: volumes já presentes na pasta central
+  // contam como "baixado" (mesmo de sessões passadas). Por cima, o estado da
+  // sessão atual (baixando/falhou) prevalece para o que está em curso agora.
   const volumeStatuses = useMemo(() => {
     const m: Record<string, VolumeDlStatus> = {}
+    for (const v of pending?.volumes ?? []) {
+      const num = volumeNumber(v.name)
+      if (num != null && diskCovers[num]) m[v.name] = 'done'
+    }
     for (const [name, jobId] of Object.entries(volumeJobs)) {
       const job = list.find((j) => j.jobId === jobId)
       if (!job) {
@@ -186,7 +237,7 @@ function DownloadsPage() {
       }
     }
     return m
-  }, [volumeJobs, list])
+  }, [volumeJobs, list, pending, diskCovers])
 
   async function cancel(id: string) {
     try {
@@ -438,6 +489,7 @@ function DownloadsPage() {
               pending={pending}
               busy={staging}
               statuses={volumeStatuses}
+              diskCovers={diskCovers}
               nameFormat={nameFormat}
               onChangeFormat={changeFormat}
               onDownloadVolume={(v) => void startVolumes([v])}
@@ -495,7 +547,9 @@ function EmptyState() {
 /** Faixa "Cap. X - Y" a partir de capítulos com campo `number`. */
 function numberRange(chs: { number: string }[]): string {
   if (chs.length === 0) return '-'
-  const nums = chs.map((c) => c.number).sort((a, b) => parseFloat(a) - parseFloat(b))
+  const nums = chs
+    .map((c) => c.number)
+    .sort((a, b) => parseFloat(a) - parseFloat(b))
   const first = nums[0]
   const last = nums[nums.length - 1]
   return first === last ? `Cap. ${first}` : `Cap. ${first} - ${last}`
@@ -505,6 +559,7 @@ function PendingVolumesPanel({
   pending,
   busy,
   statuses,
+  diskCovers,
   nameFormat,
   onChangeFormat,
   onDownloadVolume,
@@ -514,6 +569,8 @@ function PendingVolumesPanel({
   pending: PendingDownload
   busy: boolean
   statuses: Record<string, VolumeDlStatus>
+  // Número do volume → capa real no disco (para volumes já baixados).
+  diskCovers: Record<number, string>
   nameFormat: VolumeNameFormat
   onChangeFormat: (fmt: VolumeNameFormat) => void
   onDownloadVolume: (v: VolumeInput) => void
@@ -530,7 +587,8 @@ function PendingVolumesPanel({
 
   // Filtro por estado de download (todos/não baixados/baixando/baixados).
   const [statusFilter, setStatusFilter] = useState<VolumeFilter>('all')
-  const statusOf = (v: VolumeInput): VolumeDlStatus => statuses[v.name] ?? 'idle'
+  const statusOf = (v: VolumeInput): VolumeDlStatus =>
+    statuses[v.name] ?? 'idle'
 
   // Contagens por estado, para os chips de filtro.
   const counts = useMemo(() => {
@@ -679,31 +737,40 @@ function PendingVolumesPanel({
       {/* Explicação + ação da aba ativa */}
       {tab === 'safe' ? (
         <p className="flex items-start gap-1.5 rounded-lg border border-emerald-800/40 bg-emerald-950/20 p-3 text-xs leading-relaxed text-emerald-200/80">
-          <ShieldCheck size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <ShieldCheck
+            size={13}
+            className="mt-0.5 shrink-0"
+            aria-hidden="true"
+          />
           <span>
             <span className="font-semibold text-emerald-200">Recomendado.</span>{' '}
             Escolha um volume abaixo e baixe{' '}
-            <span className="font-semibold text-emerald-100">um por vez</span>. Quando
-            ele terminar, espere{' '}
-            <span className="font-semibold text-emerald-100">15–20 min</span> antes de
-            baixar o próximo — assim o site não detecta “atividade incomum” e não te
-            bloqueia. Você escolhe a ordem; o que não baixar agora fica aqui.
+            <span className="font-semibold text-emerald-100">um por vez</span>.
+            Quando ele terminar, espere{' '}
+            <span className="font-semibold text-emerald-100">15–20 min</span>{' '}
+            antes de baixar o próximo — assim o site não detecta “atividade
+            incomum” e não te bloqueia. Você escolhe a ordem; o que não baixar
+            agora fica aqui.
           </span>
         </p>
       ) : (
         <div className="space-y-2.5 rounded-lg border border-amber-800/40 bg-amber-950/20 p-3">
           <p className="flex items-start gap-1.5 text-xs leading-relaxed text-amber-200/80">
-            <AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+            <AlertTriangle
+              size={13}
+              className="mt-0.5 shrink-0"
+              aria-hidden="true"
+            />
             <span>
               Enfileira{' '}
               <span className="font-semibold text-amber-100">
                 todos os {pending.volumes.length} volumes
               </span>{' '}
-              de uma vez. Baixamos um capítulo por vez com pausas, mas em coleções
-              grandes o site pode disparar o bloqueio por “atividade incomum”. Se
-              acontecer, o download{' '}
-              <span className="font-semibold text-amber-100">não para</span>: aguarda a
-              liberação e continua sozinho — só demora mais.
+              de uma vez. Baixamos um capítulo por vez com pausas, mas em
+              coleções grandes o site pode disparar o bloqueio por “atividade
+              incomum”. Se acontecer, o download{' '}
+              <span className="font-semibold text-amber-100">não para</span>:
+              aguarda a liberação e continua sozinho — só demora mais.
             </span>
           </p>
           <button
@@ -755,7 +822,11 @@ function PendingVolumesPanel({
           [
             { key: 'all', label: 'Todos', count: counts.all },
             { key: 'idle', label: 'Não baixados', count: counts.idle },
-            { key: 'downloading', label: 'Baixando', count: counts.downloading },
+            {
+              key: 'downloading',
+              label: 'Baixando',
+              count: counts.downloading,
+            },
             { key: 'done', label: 'Baixados', count: counts.done },
           ] as const
         ).map((f) => (
@@ -800,108 +871,124 @@ function PendingVolumesPanel({
                     : 'Nenhum volume.'}
           </p>
         ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {visible.map((v) => {
-          const s = statusOf(v)
-          const done = s === 'done'
-          const downloading = s === 'downloading'
-          return (
-          <div
-            key={v.name}
-            className={`flex flex-col overflow-hidden rounded-xl border bg-neutral-900/60 transition-colors ${
-              done
-                ? 'border-emerald-500/70 ring-1 ring-emerald-500/40'
-                : downloading
-                  ? 'border-sky-600/60'
-                  : 'border-neutral-800'
-            }`}
-          >
-            <div
-              className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden ${
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {visible.map((v) => {
+              const s = statusOf(v)
+              const done = s === 'done'
+              const downloading = s === 'downloading'
+              // Volume já no disco → capa real (1ª página do 1º capítulo); senão, a
+              // capa montada (ou o placeholder com o número).
+              const num = volumeNumber(v.name)
+              const cover =
+                (done && num != null ? diskCovers[num] : undefined) ??
                 v.coverImage
-                  ? ''
-                  : 'bg-gradient-to-br from-neutral-800 to-neutral-950'
-              }`}
-            >
-              {v.coverImage ? (
-                <img
-                  src={v.coverImage}
-                  alt={`Capa de ${v.name}`}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex flex-col items-center gap-1.5 px-2 text-center">
-                  <BookOpen
-                    size={20}
-                    className={done ? 'text-emerald-400' : 'text-neutral-600'}
-                    aria-hidden="true"
-                  />
-                  <span className="font-mono text-sm font-bold text-neutral-300">
-                    {v.name}
-                  </span>
+              return (
+                <div
+                  key={v.name}
+                  className={`flex flex-col overflow-hidden rounded-xl border bg-neutral-900/60 transition-colors ${
+                    done
+                      ? 'border-emerald-500/70 ring-1 ring-emerald-500/40'
+                      : downloading
+                        ? 'border-sky-600/60'
+                        : 'border-neutral-800'
+                  }`}
+                >
+                  <div
+                    className={`relative flex aspect-[3/4] items-center justify-center overflow-hidden ${
+                      cover
+                        ? ''
+                        : 'bg-gradient-to-br from-neutral-800 to-neutral-950'
+                    }`}
+                  >
+                    {cover ? (
+                      <img
+                        src={cover}
+                        alt={`Capa de ${v.name}`}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center gap-1.5 px-2 text-center">
+                        <BookOpen
+                          size={20}
+                          className={
+                            done ? 'text-emerald-400' : 'text-neutral-600'
+                          }
+                          aria-hidden="true"
+                        />
+                        <span className="font-mono text-sm font-bold text-neutral-300">
+                          {v.name}
+                        </span>
+                      </div>
+                    )}
+                    <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
+                    {/* Selo de estado sobre a capa */}
+                    {done && (
+                      <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
+                        <CheckCircle2 size={11} aria-hidden="true" />
+                        Baixado
+                      </span>
+                    )}
+                    {downloading && (
+                      <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
+                        <Loader2
+                          size={11}
+                          className="animate-spin"
+                          aria-hidden="true"
+                        />
+                        Baixando
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-0.5 border-t border-neutral-800 px-2.5 py-2">
+                    <p className="truncate font-mono text-xs font-bold text-neutral-100">
+                      {v.name}
+                    </p>
+                    <p className="truncate text-[11px] text-neutral-400">
+                      {numberRange(v.chapters)}
+                    </p>
+                    <p className="text-[10px] text-neutral-600">
+                      {v.chapters.length}{' '}
+                      {v.chapters.length === 1 ? 'capítulo' : 'capítulos'}
+                    </p>
+                  </div>
+                  {done ? (
+                    <div className="flex items-center justify-center gap-1.5 border-t border-emerald-500/40 bg-emerald-600/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-300">
+                      <CheckCircle2 size={12} aria-hidden="true" />
+                      Baixado
+                    </div>
+                  ) : downloading ? (
+                    <div className="flex items-center justify-center gap-1.5 border-t border-sky-600/40 bg-sky-600/15 px-2.5 py-1.5 text-xs font-semibold text-sky-300">
+                      <Loader2
+                        size={12}
+                        className="animate-spin"
+                        aria-hidden="true"
+                      />
+                      Baixando…
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onDownloadVolume(v)}
+                      disabled={busy}
+                      className="flex items-center justify-center gap-1.5 border-t border-neutral-800 bg-neutral-800/40 px-2.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {s === 'failed' ? (
+                        <>
+                          <RotateCw size={12} aria-hidden="true" />
+                          Baixar de novo
+                        </>
+                      ) : (
+                        <>
+                          <Download size={12} aria-hidden="true" />
+                          Baixar
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
-              )}
-              <span className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-black/40" />
-              {/* Selo de estado sobre a capa */}
-              {done && (
-                <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
-                  <CheckCircle2 size={11} aria-hidden="true" />
-                  Baixado
-                </span>
-              )}
-              {downloading && (
-                <span className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-full bg-sky-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow">
-                  <Loader2 size={11} className="animate-spin" aria-hidden="true" />
-                  Baixando
-                </span>
-              )}
-            </div>
-            <div className="space-y-0.5 border-t border-neutral-800 px-2.5 py-2">
-              <p className="truncate font-mono text-xs font-bold text-neutral-100">
-                {v.name}
-              </p>
-              <p className="truncate text-[11px] text-neutral-400">
-                {numberRange(v.chapters)}
-              </p>
-              <p className="text-[10px] text-neutral-600">
-                {v.chapters.length}{' '}
-                {v.chapters.length === 1 ? 'capítulo' : 'capítulos'}
-              </p>
-            </div>
-            {done ? (
-              <div className="flex items-center justify-center gap-1.5 border-t border-emerald-500/40 bg-emerald-600/15 px-2.5 py-1.5 text-xs font-semibold text-emerald-300">
-                <CheckCircle2 size={12} aria-hidden="true" />
-                Baixado
-              </div>
-            ) : downloading ? (
-              <div className="flex items-center justify-center gap-1.5 border-t border-sky-600/40 bg-sky-600/15 px-2.5 py-1.5 text-xs font-semibold text-sky-300">
-                <Loader2 size={12} className="animate-spin" aria-hidden="true" />
-                Baixando…
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onDownloadVolume(v)}
-                disabled={busy}
-                className="flex items-center justify-center gap-1.5 border-t border-neutral-800 bg-neutral-800/40 px-2.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {s === 'failed' ? (
-                  <>
-                    <RotateCw size={12} aria-hidden="true" />
-                    Baixar de novo
-                  </>
-                ) : (
-                  <>
-                    <Download size={12} aria-hidden="true" />
-                    Baixar
-                  </>
-                )}
-              </button>
-            )}
+              )
+            })}
           </div>
-          )
-          })}
-        </div>
         )}
         {hasMore && (
           <div
@@ -1155,7 +1242,10 @@ function CaptchaJobAlert({
       </div>
       <ul className="space-y-1 pl-6">
         {captchaTasks.map((task) => (
-          <li key={task.chapter.id} className="font-mono text-xs text-amber-300">
+          <li
+            key={task.chapter.id}
+            className="font-mono text-xs text-amber-300"
+          >
             <a
               href={task.chapter.url}
               target="_blank"
@@ -1167,7 +1257,8 @@ function CaptchaJobAlert({
             {task.chapter.title &&
               task.chapter.title !== task.chapter.number && (
                 <span className="text-amber-400/60">
-                  {' '}- {task.chapter.title}
+                  {' '}
+                  - {task.chapter.title}
                 </span>
               )}
             <span className="ml-1 text-amber-500/50">(abrir e resolver)</span>
@@ -1329,6 +1420,10 @@ function MangaCard({
         ? 'completed'
         : 'failed'
   const volumeCount = group.jobs.length
+  // Volumes concluídos (para o rótulo "N volumes baixados").
+  const completedVolumes = group.jobs.filter(
+    (j) => j.status === 'completed',
+  ).length
 
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/40">
@@ -1351,7 +1446,9 @@ function MangaCard({
           </p>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             <span className="font-mono text-[11px] text-neutral-400">
-              {volumeCount} download{volumeCount !== 1 ? 's' : ''}
+              {completedVolumes} volume{completedVolumes !== 1 ? 's' : ''}{' '}
+              baixado
+              {completedVolumes !== 1 ? 's' : ''}
             </span>
             <span
               className="font-mono text-[11px] text-neutral-700"
@@ -1497,6 +1594,41 @@ function JobCard({
     [job.jobId, listTick],
   )
 
+  // Números dos volumes deste download (distintos, ordenados). Modo simples = [].
+  const volNums = useMemo(() => {
+    const set = new Set<number>()
+    for (const t of detail?.tasks ?? []) {
+      const n = t.volume ? volumeNumber(t.volume) : null
+      if (n != null) set.add(n)
+    }
+    return Array.from(set).sort((a, b) => a - b)
+  }, [detail])
+
+  // Rótulo do card: "Volume 001" (1 volume) · "Volume 001–003" (vários) · nome do
+  // mangá quando não há volume (modo simples).
+  const volumeLabel = useMemo(() => {
+    if (volNums.length === 0) return job.title
+    if (volNums.length === 1)
+      return formatVolumeName(volNums[0], { prefix: 'volume', digits: 3 })
+    const first = String(volNums[0]).padStart(3, '0')
+    const last = String(volNums[volNums.length - 1]).padStart(3, '0')
+    return `Volume ${first}–${last}`
+  }, [volNums, job.title])
+
+  // Capa real do volume no disco (só depois de concluído). Um volume por card no
+  // fluxo normal; com vários, usa o primeiro.
+  const { data: jobTree } = useAsync(
+    () =>
+      job.completedChapters > 0
+        ? api.getMangaTree(job.jobId)
+        : Promise.resolve(null),
+    [job.jobId, job.completedChapters, listTick],
+  )
+  const jobCover = useMemo(() => {
+    if (volNums.length === 0) return null
+    return diskCoversFromTree(jobTree, job.jobId)[volNums[0]] ?? null
+  }, [jobTree, job.jobId, volNums])
+
   const pct =
     job.totalChapters > 0
       ? (job.completedChapters / job.totalChapters) * 100
@@ -1555,9 +1687,7 @@ function JobCard({
           : 'border-neutral-800'
 
   const cardGlowClass =
-    job.status === 'running'
-      ? 'shadow-[0_0_18px_rgba(14,165,233,0.07)]'
-      : ''
+    job.status === 'running' ? 'shadow-[0_0_18px_rgba(14,165,233,0.07)]' : ''
 
   return (
     <div
@@ -1575,10 +1705,31 @@ function JobCard({
           <StatusIcon status={job.status} size={15} />
         </div>
 
+        {/* Miniatura do volume: capa real quando já no disco, senão o número. */}
+        <div className="relative flex aspect-[3/4] w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gradient-to-br from-neutral-800 to-neutral-950">
+          {jobCover ? (
+            <img
+              src={jobCover}
+              alt={`Capa de ${volumeLabel}`}
+              className="h-full w-full object-cover"
+            />
+          ) : volNums.length > 0 ? (
+            <span className="font-mono text-[10px] font-bold text-neutral-400">
+              {String(volNums[0]).padStart(3, '0')}
+            </span>
+          ) : (
+            <BookOpen
+              size={14}
+              className="text-neutral-600"
+              aria-hidden="true"
+            />
+          )}
+        </div>
+
         {/* Título e metadados */}
         <div className="min-w-0 flex-1 overflow-hidden">
           <p className="truncate text-sm font-medium leading-snug text-neutral-100">
-            {job.title}
+            {volumeLabel}
           </p>
           <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
             <span
@@ -1716,7 +1867,11 @@ function JobCard({
               title="Confere se os arquivos estão mesmo na pasta de download"
             >
               {verifying ? (
-                <Loader2 size={11} className="animate-spin" aria-hidden="true" />
+                <Loader2
+                  size={11}
+                  className="animate-spin"
+                  aria-hidden="true"
+                />
               ) : (
                 <FolderSearch size={11} aria-hidden="true" />
               )}
@@ -1726,8 +1881,8 @@ function JobCard({
               (missingOnDisk > 0 ? (
                 <span className="flex items-center gap-1 font-mono text-[11px] text-red-400">
                   <FileWarning size={11} aria-hidden="true" />
-                  {missingOnDisk} capítulo{missingOnDisk !== 1 ? 's' : ''} fora da
-                  pasta
+                  {missingOnDisk} capítulo{missingOnDisk !== 1 ? 's' : ''} fora
+                  da pasta
                 </span>
               ) : (
                 <span className="flex items-center gap-1 font-mono text-[11px] text-emerald-400/90">
@@ -1759,6 +1914,9 @@ function JobCard({
             <VolumeEditor
               editor={jobEditor}
               title={job.title}
+              // Aberto pela tela de downloads: foca só o volume deste card
+              // (com opção de ver todos). Vários volumes = abre com todos.
+              focusVolume={volNums.length === 1 ? volNums[0] : undefined}
               onClose={() => setShowEditor(false)}
             />
           )}
@@ -1943,12 +2101,9 @@ function TaskRow({
           <span className="font-medium text-neutral-200">
             {task.chapter.number}
           </span>
-          {task.chapter.title &&
-            task.chapter.title !== task.chapter.number && (
-              <span className="text-neutral-600">
-                {' '}- {task.chapter.title}
-              </span>
-            )}
+          {task.chapter.title && task.chapter.title !== task.chapter.number && (
+            <span className="text-neutral-600"> - {task.chapter.title}</span>
+          )}
         </span>
 
         {/* Contador de páginas (running) */}

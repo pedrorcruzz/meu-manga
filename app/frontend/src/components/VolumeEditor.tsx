@@ -3,7 +3,7 @@
 // adicionar/trocar/remover capa e corrigir o número de um capítulo. Tudo mexe só
 // na pasta; as páginas se renumeram sozinhas no backend.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronLeft,
   ChevronRight,
@@ -24,11 +24,18 @@ import {
   type TreeVolume,
 } from '~/api/client'
 import { ConfirmDialog } from '~/components/ConfirmDialog'
+import { volumeNumber } from '~/lib/volumeName'
 
 interface VolumeEditorProps {
   /** Adaptador do backend (download do histórico ou pasta arbitrária no disco). */
   editor: TreeEditorApi
   title: string
+  /**
+   * Número do volume a focar ao abrir (ex.: aberto a partir de um download
+   * específico). Presente → começa mostrando só esse volume, com opção de ver
+   * todos. Ausente → mostra todos (ex.: aberto por "Meus Mangás").
+   */
+  focusVolume?: number
   onClose: () => void
 }
 
@@ -66,8 +73,17 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
+export function VolumeEditor({
+  editor,
+  title,
+  focusVolume,
+  onClose,
+}: VolumeEditorProps) {
   const [tree, setTree] = useState<MangaTree | null>(null)
+  // Escopo do editor: 'all' = todos os volumes · número = só aquele volume.
+  const [scope, setScope] = useState<number | 'all'>(focusVolume ?? 'all')
+  // Busca por número de volume (filtra dentro do escopo "todos").
+  const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -202,6 +218,36 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
   const empty =
     tree != null && tree.volumes.length === 0 && tree.loose.length === 0
 
+  // Volumes visíveis após escopo + busca. A busca casa nome/pasta do volume ou o
+  // número de qualquer capítulo dele.
+  const visibleVolumes = useMemo(() => {
+    const all = tree?.volumes ?? []
+    const q = query.trim().toLowerCase()
+    return all.filter((vol) => {
+      if (scope !== 'all' && volumeNumber(vol.name) !== scope) return false
+      if (!q) return true
+      if (vol.name.toLowerCase().includes(q)) return true
+      if (vol.folder.toLowerCase().includes(q)) return true
+      return vol.chapters.some((c) => c.number.toLowerCase().includes(q))
+    })
+  }, [tree, scope, query])
+
+  // Opções do seletor de escopo (um volume por número, ordenado).
+  const volumeOptions = useMemo(() => {
+    const opts: { value: number; label: string }[] = []
+    for (const vol of tree?.volumes ?? []) {
+      const n = volumeNumber(vol.name)
+      if (n != null) opts.push({ value: n, label: vol.name })
+    }
+    return opts.sort((a, b) => a.value - b.value)
+  }, [tree])
+
+  // Capítulos soltos só aparecem quando não há um volume específico em foco.
+  const showLoose = scope === 'all' && (tree?.loose.length ?? 0) > 0
+  // Nada casou o escopo/busca, embora a pasta tenha conteúdo.
+  const noMatch =
+    !empty && !loading && visibleVolumes.length === 0 && !showLoose
+
   return (
     <>
       <div
@@ -218,7 +264,11 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
           <div className="flex items-center justify-between border-b border-neutral-800 p-4">
             <div className="min-w-0">
               <h2 className="flex items-center gap-2 font-semibold text-neutral-100">
-                <Layers size={16} className="text-neutral-400" aria-hidden="true" />
+                <Layers
+                  size={16}
+                  className="text-neutral-400"
+                  aria-hidden="true"
+                />
                 Consertar volumes
               </h2>
               <p className="truncate text-xs text-neutral-500">{title}</p>
@@ -245,14 +295,74 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
           <div className="border-b border-neutral-800 bg-neutral-950/40 px-4 py-2.5">
             <p className="text-xs leading-relaxed text-neutral-500">
               Arraste um capítulo para outro volume para movê-lo. Os botões{' '}
-              <span className="text-neutral-400">Volume inteiro</span> no topo de cada
-              volume mexem na capa/páginas do volume (1º/último capítulo).{' '}
+              <span className="text-neutral-400">Volume inteiro</span> no topo
+              de cada volume mexem na capa/páginas do volume (1º/último
+              capítulo).{' '}
               <span className="text-neutral-400">Abra um capítulo</span> para
               reordenar/apagar páginas ou mexer na capa e nas 1ª/última páginas{' '}
               <span className="text-neutral-400">só dele</span>. As páginas se
-              renumeram sozinhas. Nada é re-baixado — só a pasta em disco é alterada.
+              renumeram sozinhas. Nada é re-baixado — só a pasta em disco é
+              alterada.
             </p>
           </div>
+
+          {/* Busca + escopo (só quando há volumes) */}
+          {!loading && !empty && (tree?.volumes.length ?? 0) > 0 && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-neutral-800 bg-neutral-950/40 px-4 py-2.5">
+              <div className="relative min-w-0 flex-1">
+                <Search
+                  size={14}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"
+                  aria-hidden="true"
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Buscar volume… (ex: 003, 3)"
+                  className="w-full rounded-lg border border-neutral-800 bg-neutral-900/60 py-2 pl-9 pr-9 text-sm placeholder:text-neutral-600 focus:border-neutral-600 focus:outline-none"
+                  aria-label="Buscar volume"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery('')}
+                    aria-label="Limpar busca"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-neutral-600 transition-colors hover:text-neutral-300"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+              <select
+                value={scope === 'all' ? 'all' : String(scope)}
+                onChange={(e) =>
+                  setScope(
+                    e.target.value === 'all' ? 'all' : Number(e.target.value),
+                  )
+                }
+                className="rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-2 text-sm text-neutral-200 focus:border-neutral-600 focus:outline-none"
+                aria-label="Volume a exibir"
+              >
+                <option value="all">Todos os volumes</option>
+                {volumeOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {scope !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => setScope('all')}
+                  className="rounded-lg border border-neutral-700 px-2.5 py-2 text-xs text-neutral-300 transition-colors hover:bg-neutral-800"
+                >
+                  Ver todos
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Erro */}
           {error && (
@@ -271,9 +381,13 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
               <p className="py-8 text-center text-sm text-neutral-500">
                 Nada encontrado na pasta desta obra.
               </p>
+            ) : noMatch ? (
+              <p className="py-8 text-center text-sm text-neutral-500">
+                Nenhum volume corresponde à busca.
+              </p>
             ) : (
               <div className="space-y-4">
-                {tree?.volumes.map((vol) => (
+                {visibleVolumes.map((vol) => (
                   <VolumeSection
                     key={vol.folder}
                     pageUrl={editor.pageUrl}
@@ -282,7 +396,9 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
                     isDropTarget={dropTarget === vol.folder}
                     onDragChapter={setDrag}
                     onDragEnter={() => drag && setDropTarget(vol.folder)}
-                    onDrop={() => drag && move(drag.fromVolume, vol.folder, drag.chapter)}
+                    onDrop={() =>
+                      drag && move(drag.fromVolume, vol.folder, drag.chapter)
+                    }
                     onOpenChapter={(ch) =>
                       setPreview({
                         volume: vol.folder,
@@ -301,15 +417,21 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
                 ))}
 
                 {/* Capítulos soltos (modo simples / sem volume) */}
-                {tree && tree.loose.length > 0 && (
+                {tree && showLoose && (
                   <VolumeSection
                     pageUrl={editor.pageUrl}
-                    vol={{ folder: '', name: 'Sem volume', chapters: tree.loose }}
+                    vol={{
+                      folder: '',
+                      name: 'Sem volume',
+                      chapters: tree.loose,
+                    }}
                     drag={drag}
                     isDropTarget={dropTarget === '__loose__'}
                     onDragChapter={setDrag}
                     onDragEnter={() => drag && setDropTarget('__loose__')}
-                    onDrop={() => drag && move(drag.fromVolume, '', drag.chapter)}
+                    onDrop={() =>
+                      drag && move(drag.fromVolume, '', drag.chapter)
+                    }
                     onOpenChapter={(ch) =>
                       setPreview({
                         volume: '',
@@ -362,9 +484,7 @@ export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
           onReplaceCover={() =>
             void setCoverChapter(preview.volume, preview.folder, 'replace')
           }
-          onAddPage={() =>
-            void addPageChapter(preview.volume, preview.folder)
-          }
+          onAddPage={() => void addPageChapter(preview.volume, preview.folder)}
           onRemoveFirstPage={() =>
             removeFirstPageChapter(preview.volume, preview.folder)
           }
@@ -460,7 +580,11 @@ function VolumeSection({
     >
       {/* Cabeçalho do volume */}
       <div className="flex flex-wrap items-center gap-2 border-b border-neutral-800/60 px-3 py-2">
-        <Layers size={12} className="shrink-0 text-neutral-500" aria-hidden="true" />
+        <Layers
+          size={12}
+          className="shrink-0 text-neutral-500"
+          aria-hidden="true"
+        />
         <span className="font-mono text-xs font-bold text-neutral-200">
           {vol.name || 'Sem volume'}
         </span>
@@ -653,7 +777,8 @@ function ChapterCard({
         ) : (
           <>
             <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-300">
-              Cap. <span className="font-medium text-neutral-100">{ch.number}</span>
+              Cap.{' '}
+              <span className="font-medium text-neutral-100">{ch.number}</span>
             </span>
             <button
               type="button"
@@ -731,7 +856,9 @@ function ChapterPreview({
     const n = String(i + 1)
     return n.includes(q) || n.padStart(3, '0').includes(q)
   }
-  const matchCount = q ? names.filter((_, i) => matchesQuery(i)).length : names.length
+  const matchCount = q
+    ? names.filter((_, i) => matchesQuery(i)).length
+    : names.length
 
   // Reposiciona a página de `from` para `to` (envia a nova ordem ao backend).
   function moveTo(from: number, to: number) {
@@ -873,76 +1000,76 @@ function ChapterPreview({
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
               {names.map((name, i) =>
                 matchesQuery(i) ? (
-                <div
-                  key={name}
-                  draggable={!busy}
-                  onDragStart={(e) => {
-                    e.dataTransfer.effectAllowed = 'move'
-                    setDragIdx(i)
-                  }}
-                  onDragEnter={() => dragIdx !== null && setOverIdx(i)}
-                  onDragOver={(e) => {
-                    if (dragIdx !== null) e.preventDefault()
-                  }}
-                  onDragEnd={() => {
-                    setDragIdx(null)
-                    setOverIdx(null)
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    handleDrop()
-                  }}
-                  className={`group relative overflow-hidden rounded-lg border bg-neutral-800 transition-colors ${
-                    overIdx === i && dragIdx !== null && dragIdx !== i
-                      ? 'border-sky-500 ring-2 ring-sky-500'
-                      : 'border-neutral-800'
-                  } ${dragIdx === i ? 'opacity-40' : ''} ${
-                    busy ? '' : 'cursor-grab active:cursor-grabbing'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onOpenLightbox(name)}
-                    aria-label={`Ampliar página ${name}`}
-                    className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
+                  <div
+                    key={name}
+                    draggable={!busy}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move'
+                      setDragIdx(i)
+                    }}
+                    onDragEnter={() => dragIdx !== null && setOverIdx(i)}
+                    onDragOver={(e) => {
+                      if (dragIdx !== null) e.preventDefault()
+                    }}
+                    onDragEnd={() => {
+                      setDragIdx(null)
+                      setOverIdx(null)
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      handleDrop()
+                    }}
+                    className={`group relative overflow-hidden rounded-lg border bg-neutral-800 transition-colors ${
+                      overIdx === i && dragIdx !== null && dragIdx !== i
+                        ? 'border-sky-500 ring-2 ring-sky-500'
+                        : 'border-neutral-800'
+                    } ${dragIdx === i ? 'opacity-40' : ''} ${
+                      busy ? '' : 'cursor-grab active:cursor-grabbing'
+                    }`}
                   >
-                    <img
-                      src={pageUrl(preview.volume, preview.folder, name, rev)}
-                      alt={`Página ${name}`}
-                      loading="lazy"
-                      draggable={false}
-                      className="aspect-[2/3] w-full object-cover transition duration-150 group-hover:brightness-50"
-                    />
-                  </button>
-                  <span className="pointer-events-none absolute left-1 top-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300">
-                    {i + 1}
-                  </span>
-                  {/* Controles: mover ‹ ›, apagar */}
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-t from-black/80 to-transparent p-1 opacity-0 transition group-hover:opacity-100">
-                    <PageBtn
-                      label={`Mover página ${name} para trás`}
-                      onClick={() => moveTo(i, i - 1)}
-                      disabled={busy || i === 0}
+                    <button
+                      type="button"
+                      onClick={() => onOpenLightbox(name)}
+                      aria-label={`Ampliar página ${name}`}
+                      className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
                     >
-                      <ChevronLeft size={13} aria-hidden="true" />
-                    </PageBtn>
-                    <PageBtn
-                      label={`Mover página ${name} para frente`}
-                      onClick={() => moveTo(i, i + 1)}
-                      disabled={busy || i === names.length - 1}
-                    >
-                      <ChevronRight size={13} aria-hidden="true" />
-                    </PageBtn>
-                    <PageBtn
-                      label={`Apagar página ${name}`}
-                      onClick={() => handleDelete(name)}
-                      disabled={busy}
-                      danger
-                    >
-                      <Trash2 size={12} aria-hidden="true" />
-                    </PageBtn>
+                      <img
+                        src={pageUrl(preview.volume, preview.folder, name, rev)}
+                        alt={`Página ${name}`}
+                        loading="lazy"
+                        draggable={false}
+                        className="aspect-[2/3] w-full object-cover transition duration-150 group-hover:brightness-50"
+                      />
+                    </button>
+                    <span className="pointer-events-none absolute left-1 top-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-neutral-300">
+                      {i + 1}
+                    </span>
+                    {/* Controles: mover ‹ ›, apagar */}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 bg-gradient-to-t from-black/80 to-transparent p-1 opacity-0 transition group-hover:opacity-100">
+                      <PageBtn
+                        label={`Mover página ${name} para trás`}
+                        onClick={() => moveTo(i, i - 1)}
+                        disabled={busy || i === 0}
+                      >
+                        <ChevronLeft size={13} aria-hidden="true" />
+                      </PageBtn>
+                      <PageBtn
+                        label={`Mover página ${name} para frente`}
+                        onClick={() => moveTo(i, i + 1)}
+                        disabled={busy || i === names.length - 1}
+                      >
+                        <ChevronRight size={13} aria-hidden="true" />
+                      </PageBtn>
+                      <PageBtn
+                        label={`Apagar página ${name}`}
+                        onClick={() => handleDelete(name)}
+                        disabled={busy}
+                        danger
+                      >
+                        <Trash2 size={12} aria-hidden="true" />
+                      </PageBtn>
+                    </div>
                   </div>
-                </div>
                 ) : null,
               )}
             </div>
