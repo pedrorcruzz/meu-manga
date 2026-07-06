@@ -16,18 +16,22 @@ import {
   X,
 } from 'lucide-react'
 import {
-  api,
   type MangaTree,
   type TreeChapter,
+  type TreeEditorApi,
   type TreeVolume,
 } from '~/api/client'
 import { ConfirmDialog } from '~/components/ConfirmDialog'
 
 interface VolumeEditorProps {
-  jobId: string
+  /** Adaptador do backend (download do histórico ou pasta arbitrária no disco). */
+  editor: TreeEditorApi
   title: string
   onClose: () => void
 }
+
+/** URL de uma página (do adaptador ativo). */
+type PageUrl = TreeEditorApi['pageUrl']
 
 /** Capítulo sendo arrastado (origem). */
 type Drag = { fromVolume: string; chapter: string }
@@ -60,7 +64,7 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
-export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
+export function VolumeEditor({ editor, title, onClose }: VolumeEditorProps) {
   const [tree, setTree] = useState<MangaTree | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -76,15 +80,15 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
   useEffect(() => {
     let alive = true
     setLoading(true)
-    api
-      .getMangaTree(jobId)
+    editor
+      .getTree()
       .then((t) => alive && setTree(t))
       .catch((e) => alive && setError(errMsg(e)))
       .finally(() => alive && setLoading(false))
     return () => {
       alive = false
     }
-  }, [jobId])
+  }, [editor])
 
   // ESC fecha o preview/lightbox aberto ou, se nada aberto, o editor.
   useEffect(() => {
@@ -117,32 +121,32 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
     setDrag(null)
     setDropTarget(null)
     if (fromVolume === toVolume) return
-    void run(() => api.moveChapter(jobId, { fromVolume, toVolume, chapter }))
+    void run(() => editor.moveChapter({ fromVolume, toVolume, chapter }))
   }
 
   async function setCover(volume: string, mode: 'insert' | 'replace') {
     const file = await pickImageFile()
     if (!file) return
     const image = await fileToDataURL(file)
-    void run(() => api.setCover(jobId, { volume, image, mode }))
+    void run(() => editor.setCover({ volume, image, mode }))
   }
 
   function removeCover(volume: string) {
-    void run(() => api.removeCover(jobId, volume))
+    void run(() => editor.removeCover(volume))
   }
 
   function rename(volume: string, oldNumber: string, newNumber: string) {
     const n = newNumber.trim()
     if (n === '' || n === oldNumber) return
-    void run(() => api.renameChapter(jobId, { volume, oldNumber, newNumber: n }))
+    void run(() => editor.renameChapter({ volume, oldNumber, newNumber: n }))
   }
 
   function deletePage(volume: string, chapter: string, name: string) {
-    void run(() => api.deleteTreePage(jobId, { volume, chapter, name }))
+    void run(() => editor.deleteTreePage({ volume, chapter, name }))
   }
 
   function reorderPages(volume: string, chapter: string, order: string[]) {
-    void run(() => api.reorderPages(jobId, { volume, chapter, order }))
+    void run(() => editor.reorderPages({ volume, chapter, order }))
   }
 
   const empty =
@@ -222,7 +226,7 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
                 {tree?.volumes.map((vol) => (
                   <VolumeSection
                     key={vol.folder}
-                    jobId={jobId}
+                    pageUrl={editor.pageUrl}
                     vol={vol}
                     drag={drag}
                     isDropTarget={dropTarget === vol.folder}
@@ -248,7 +252,7 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
                 {/* Capítulos soltos (modo simples / sem volume) */}
                 {tree && tree.loose.length > 0 && (
                   <VolumeSection
-                    jobId={jobId}
+                    pageUrl={editor.pageUrl}
                     vol={{ folder: '', name: 'Sem volume', chapters: tree.loose }}
                     drag={drag}
                     isDropTarget={dropTarget === '__loose__'}
@@ -289,7 +293,7 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
       {/* Preview das páginas de um capítulo */}
       {preview && (
         <ChapterPreview
-          jobId={jobId}
+          pageUrl={editor.pageUrl}
           preview={preview}
           pages={findChapter(tree, preview.volume, preview.folder)?.pages ?? 0}
           rev={rev}
@@ -315,13 +319,7 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
           onClick={() => setLightbox(null)}
         >
           <img
-            src={api.mangaPageUrl(
-              jobId,
-              preview.volume,
-              preview.folder,
-              lightbox,
-              rev,
-            )}
+            src={editor.pageUrl(preview.volume, preview.folder, lightbox, rev)}
             alt={`Página ${lightbox}`}
             className="max-h-full max-w-full object-contain"
             onClick={(e) => e.stopPropagation()}
@@ -335,7 +333,7 @@ export function VolumeEditor({ jobId, title, onClose }: VolumeEditorProps) {
 // ── Seção de um volume ──────────────────────────────────────────────────────────
 
 interface VolumeSectionProps {
-  jobId: string
+  pageUrl: PageUrl
   vol: TreeVolume
   drag: Drag | null
   isDropTarget: boolean
@@ -355,7 +353,7 @@ interface VolumeSectionProps {
 }
 
 function VolumeSection({
-  jobId,
+  pageUrl,
   vol,
   drag,
   isDropTarget,
@@ -433,7 +431,7 @@ function VolumeSection({
           {vol.chapters.map((ch) => (
             <ChapterCard
               key={ch.folder}
-              jobId={jobId}
+              pageUrl={pageUrl}
               volumeFolder={vol.folder}
               ch={ch}
               onDragStart={() =>
@@ -482,7 +480,7 @@ function CoverButton({
 // ── Card de capítulo (arrastável) ────────────────────────────────────────────────
 
 interface ChapterCardProps {
-  jobId: string
+  pageUrl: PageUrl
   volumeFolder: string
   ch: TreeChapter
   onDragStart: () => void
@@ -494,7 +492,7 @@ interface ChapterCardProps {
 }
 
 function ChapterCard({
-  jobId,
+  pageUrl,
   volumeFolder,
   ch,
   onDragStart,
@@ -536,13 +534,7 @@ function ChapterCard({
       >
         {ch.firstPage ? (
           <img
-            src={api.mangaPageUrl(
-              jobId,
-              volumeFolder,
-              ch.folder,
-              ch.firstPage,
-              rev,
-            )}
+            src={pageUrl(volumeFolder, ch.folder, ch.firstPage, rev)}
             alt={`Capa do capítulo ${ch.number}`}
             loading="lazy"
             className="h-full w-full object-cover transition duration-150 group-hover:brightness-75"
@@ -604,7 +596,7 @@ function ChapterCard({
 // ── Preview das páginas de um capítulo ───────────────────────────────────────────
 
 interface ChapterPreviewProps {
-  jobId: string
+  pageUrl: PageUrl
   preview: Preview
   /** Nº de páginas no disco (vem da árvore viva). */
   pages: number
@@ -618,7 +610,7 @@ interface ChapterPreviewProps {
 }
 
 function ChapterPreview({
-  jobId,
+  pageUrl,
   preview,
   pages,
   rev,
@@ -735,13 +727,7 @@ function ChapterPreview({
                     className="block w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400"
                   >
                     <img
-                      src={api.mangaPageUrl(
-                        jobId,
-                        preview.volume,
-                        preview.folder,
-                        name,
-                        rev,
-                      )}
+                      src={pageUrl(preview.volume, preview.folder, name, rev)}
                       alt={`Página ${name}`}
                       loading="lazy"
                       draggable={false}

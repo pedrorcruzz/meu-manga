@@ -213,8 +213,53 @@ export interface DownloadEvent {
   message?: string
 }
 
+/** Formato global do nome dos volumes (persistido no SQLite do backend). */
+export interface VolumeNameFormatDTO {
+  prefix: 'none' | 'v' | 'volume'
+  digits: 1 | 2 | 3
+}
+
 export interface Settings {
   downloadDir: string
+  /** Última pasta de mangá aberta no modo "Consertar da pasta" ("" se nenhuma). */
+  mangaFolder: string
+  volumeNameFormat: VolumeNameFormatDTO
+}
+
+/**
+ * Adaptador do editor de árvore (folder-first). Abstrai QUAL backend edita a
+ * pasta: um download do histórico (`jobEditor`) ou uma pasta arbitrária no disco
+ * (`folderEditor`). O componente VolumeEditor fala só com esta interface.
+ */
+export interface TreeEditorApi {
+  getTree: () => Promise<MangaTree>
+  pageUrl: (vol: string, chap: string, name: string, rev?: number) => string
+  moveChapter: (b: {
+    fromVolume: string
+    toVolume: string
+    chapter: string
+  }) => Promise<MangaTree>
+  renameChapter: (b: {
+    volume: string
+    oldNumber: string
+    newNumber: string
+  }) => Promise<MangaTree>
+  setCover: (b: {
+    volume: string
+    image: string
+    mode: 'insert' | 'replace'
+  }) => Promise<MangaTree>
+  removeCover: (volume: string) => Promise<MangaTree>
+  deleteTreePage: (b: {
+    volume: string
+    chapter: string
+    name: string
+  }) => Promise<MangaTree>
+  reorderPages: (b: {
+    volume: string
+    chapter: string
+    order: string[]
+  }) => Promise<MangaTree>
 }
 
 export interface PagesResponse {
@@ -463,6 +508,70 @@ export const api = {
       `/downloads/${encodeURIComponent(jobId)}/tree/page/reorder`,
       { method: 'POST', body: JSON.stringify(body) },
     ),
+  /** Adaptador do editor para um download do histórico (endpoints /downloads/{id}/tree). */
+  jobEditor: (jobId: string): TreeEditorApi => ({
+    getTree: () => api.getMangaTree(jobId),
+    pageUrl: (vol, chap, name, rev) =>
+      api.mangaPageUrl(jobId, vol, chap, name, rev),
+    moveChapter: (b) => api.moveChapter(jobId, b),
+    renameChapter: (b) => api.renameChapter(jobId, b),
+    setCover: (b) => api.setCover(jobId, b),
+    removeCover: (volume) => api.removeCover(jobId, volume),
+    deleteTreePage: (b) => api.deleteTreePage(jobId, b),
+    reorderPages: (b) => api.reorderPages(jobId, b),
+  }),
+  // ── Editor "Consertar da pasta" (pasta de mangá arbitrária no disco) ──────────
+  /** Abre o seletor nativo e devolve a pasta escolhida ("" se cancelado). */
+  folderPick: () =>
+    req<{ path: string }>('/folder/pick', { method: 'POST' }),
+  /** Varre a pasta escolhida e devolve a árvore (volumes, capítulos, páginas). */
+  folderTree: (path: string) =>
+    req<MangaTree>(`/folder/tree?path=${encodeURIComponent(path)}`),
+  /** URL direta de uma página da pasta (para <img src>). Não faz fetch. */
+  folderPageUrl: (
+    path: string,
+    vol: string,
+    chap: string,
+    name: string,
+    rev?: number,
+  ): string =>
+    `${API_BASE}/api/folder/tree/page?path=${encodeURIComponent(path)}&vol=${encodeURIComponent(vol)}&chap=${encodeURIComponent(chap)}&name=${encodeURIComponent(name)}${rev ? `&v=${String(rev)}` : ''}`,
+  /** Adaptador do editor para uma pasta arbitrária no disco. */
+  folderEditor: (path: string): TreeEditorApi => ({
+    getTree: () => api.folderTree(path),
+    pageUrl: (vol, chap, name, rev) =>
+      api.folderPageUrl(path, vol, chap, name, rev),
+    moveChapter: (b) =>
+      req<MangaTree>('/folder/tree/move', {
+        method: 'POST',
+        body: JSON.stringify({ path, ...b }),
+      }),
+    renameChapter: (b) =>
+      req<MangaTree>('/folder/tree/rename', {
+        method: 'POST',
+        body: JSON.stringify({ path, ...b }),
+      }),
+    setCover: (b) =>
+      req<MangaTree>('/folder/tree/cover', {
+        method: 'PUT',
+        body: JSON.stringify({ path, ...b }),
+      }),
+    removeCover: (volume) =>
+      req<MangaTree>(
+        `/folder/tree/cover?path=${encodeURIComponent(path)}&vol=${encodeURIComponent(volume)}`,
+        { method: 'DELETE' },
+      ),
+    deleteTreePage: (b) =>
+      req<MangaTree>('/folder/tree/page/delete', {
+        method: 'POST',
+        body: JSON.stringify({ path, ...b }),
+      }),
+    reorderPages: (b) =>
+      req<MangaTree>('/folder/tree/page/reorder', {
+        method: 'POST',
+        body: JSON.stringify({ path, ...b }),
+      }),
+  }),
   /** Encerra o backend e o servidor de desenvolvimento. Falhas de rede são
    *  esperadas - o servidor mata a si mesmo no meio da resposta. */
   quit: async (): Promise<void> => {

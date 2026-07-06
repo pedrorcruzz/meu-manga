@@ -170,6 +170,34 @@ func (s *Store) attachCovers(job *domain.Job) error {
 	return rows.Err()
 }
 
+// GetSetting reads a persisted preference from the kv table (namespaced under
+// "setting:" so it never clashes with internal keys like 'block'). ok=false when
+// the key was never set.
+func (s *Store) GetSetting(key string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var v string
+	err := s.db.QueryRow(`SELECT v FROM kv WHERE k = ?`, "setting:"+key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return v, true, nil
+}
+
+// SetSetting upserts a persisted preference into the kv table (namespaced under
+// "setting:"). Survives restarting the app.
+func (s *Store) SetSetting(key, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT INTO kv (k, v) VALUES (?, ?)
+		 ON CONFLICT(k) DO UPDATE SET v = excluded.v`, "setting:"+key, value)
+	return err
+}
+
 // SaveBlock persists the active block window. A zero `until` clears it.
 func (s *Store) SaveBlock(until time.Time, raw string) error {
 	s.mu.Lock()

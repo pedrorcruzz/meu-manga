@@ -35,6 +35,9 @@ type Deps struct {
 	// Editor é o "Consertar volumes": lê/edita a pasta em disco da obra (mover
 	// capítulo, capa, corrigir número), sem re-scrapear o site.
 	Editor *usecase.MangaEditor
+	// FolderEditor é o "Consertar da pasta": mesma edição folder-first, mas sobre
+	// uma pasta de mangá escolhida em qualquer lugar do disco (obra já movida).
+	FolderEditor *usecase.FolderEditor
 	// Mounts persiste as montagens de volumes da obra (sobrevivem a fechar o app).
 	Mounts MountStore
 }
@@ -102,6 +105,17 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/downloads/{id}/tree/cover", s.deleteCover)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/delete", s.deleteTreePage)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/reorder", s.reorderPages)
+	// Editor "Consertar da pasta" — mesma edição folder-first sobre uma pasta de
+	// mangá escolhida em qualquer lugar do disco (endereçada por ?path=/body.path).
+	s.mux.HandleFunc("POST /api/folder/pick", s.pickMangaFolder)
+	s.mux.HandleFunc("GET /api/folder/tree", s.folderTree)
+	s.mux.HandleFunc("GET /api/folder/tree/page", s.folderTreePage)
+	s.mux.HandleFunc("POST /api/folder/tree/move", s.folderMove)
+	s.mux.HandleFunc("POST /api/folder/tree/rename", s.folderRename)
+	s.mux.HandleFunc("PUT /api/folder/tree/cover", s.folderPutCover)
+	s.mux.HandleFunc("DELETE /api/folder/tree/cover", s.folderDeleteCover)
+	s.mux.HandleFunc("POST /api/folder/tree/page/delete", s.folderDeletePage)
+	s.mux.HandleFunc("POST /api/folder/tree/page/reorder", s.folderReorderPages)
 	// Montagens salvas — persistência dos volumes montados na tela da obra.
 	s.mux.HandleFunc("GET /api/mounts", s.listMounts)
 	s.mux.HandleFunc("DELETE /api/mounts", s.clearMounts)
@@ -303,6 +317,156 @@ func (s *Server) reorderPages(w http.ResponseWriter, r *http.Request) {
 // deleteCover remove a capa de um volume (?vol=).
 func (s *Server) deleteCover(w http.ResponseWriter, r *http.Request) {
 	tree, err := s.deps.Editor.RemoveCover(r.PathValue("id"), r.URL.Query().Get("vol"))
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+// ── Editor "Consertar da pasta" (folder-first, pasta arbitrária no disco) ────────
+
+// pickMangaFolder abre o seletor nativo e devolve o caminho escolhido ("" se
+// cancelado), sem alterar nenhuma preferência.
+func (s *Server) pickMangaFolder(w http.ResponseWriter, r *http.Request) {
+	dir, err := s.deps.Settings.PickFolder(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"path": dir})
+}
+
+// folderTree varre a pasta escolhida (?path=) e devolve os volumes/capítulos.
+func (s *Server) folderTree(w http.ResponseWriter, r *http.Request) {
+	tree, err := s.deps.FolderEditor.Tree(r.URL.Query().Get("path"))
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+// folderTreePage serve uma página do disco endereçada por (?path=&vol=&chap=&name=).
+func (s *Server) folderTreePage(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	data, err := s.deps.FolderEditor.Page(q.Get("path"), q.Get("vol"), q.Get("chap"), q.Get("name"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "page not found")
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
+type folderMoveReq struct {
+	Path       string `json:"path"`
+	FromVolume string `json:"fromVolume"`
+	ToVolume   string `json:"toVolume"`
+	Chapter    string `json:"chapter"`
+}
+
+func (s *Server) folderMove(w http.ResponseWriter, r *http.Request) {
+	var req folderMoveReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chapter == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.FolderEditor.Move(req.Path, req.FromVolume, req.ToVolume, req.Chapter)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+type folderRenameReq struct {
+	Path      string `json:"path"`
+	Volume    string `json:"volume"`
+	OldNumber string `json:"oldNumber"`
+	NewNumber string `json:"newNumber"`
+}
+
+func (s *Server) folderRename(w http.ResponseWriter, r *http.Request) {
+	var req folderRenameReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.OldNumber == "" || req.NewNumber == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.FolderEditor.Rename(req.Path, req.Volume, req.OldNumber, req.NewNumber)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+type folderCoverReq struct {
+	Path   string `json:"path"`
+	Volume string `json:"volume"`
+	Image  string `json:"image"`
+	Mode   string `json:"mode"`
+}
+
+func (s *Server) folderPutCover(w http.ResponseWriter, r *http.Request) {
+	var req folderCoverReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Image == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	jpeg, err := decodeCover(req.Image)
+	if err != nil || len(jpeg) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid image")
+		return
+	}
+	tree, err := s.deps.FolderEditor.SetCover(req.Path, req.Volume, jpeg, req.Mode != "replace")
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+func (s *Server) folderDeleteCover(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	tree, err := s.deps.FolderEditor.RemoveCover(q.Get("path"), q.Get("vol"))
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+type folderPageOpReq struct {
+	Path    string   `json:"path"`
+	Volume  string   `json:"volume"`
+	Chapter string   `json:"chapter"`
+	Name    string   `json:"name"`
+	Order   []string `json:"order"`
+}
+
+func (s *Server) folderDeletePage(w http.ResponseWriter, r *http.Request) {
+	var req folderPageOpReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chapter == "" || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.FolderEditor.DeletePage(req.Path, req.Volume, req.Chapter, req.Name)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+func (s *Server) folderReorderPages(w http.ResponseWriter, r *http.Request) {
+	var req folderPageOpReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chapter == "" || len(req.Order) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.FolderEditor.ReorderPages(req.Path, req.Volume, req.Chapter, req.Order)
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -618,34 +782,76 @@ func (s *Server) removeJob(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"downloadDir": s.deps.Settings.DownloadDir()})
+// settingsPayload monta o JSON completo de configurações (pasta + formato do
+// nome dos volumes + última pasta aberta), tudo persistido no SQLite.
+func (s *Server) settingsPayload() map[string]any {
+	f := s.deps.Settings.VolumeFormat()
+	return map[string]any{
+		"downloadDir": s.deps.Settings.DownloadDir(),
+		"mangaFolder": s.deps.Settings.MangaFolder(),
+		"volumeNameFormat": map[string]any{
+			"prefix": f.Prefix,
+			"digits": f.Digits,
+		},
+	}
 }
 
+func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.settingsPayload())
+}
+
+type volumeFormatDTO struct {
+	Prefix string `json:"prefix"`
+	Digits int    `json:"digits"`
+}
+
+// settingsReq: campos opcionais (ponteiros) — atualiza só o que vier no corpo.
 type settingsReq struct {
-	DownloadDir string `json:"downloadDir"`
+	DownloadDir      *string          `json:"downloadDir"`
+	MangaFolder      *string          `json:"mangaFolder"`
+	VolumeNameFormat *volumeFormatDTO `json:"volumeNameFormat"`
 }
 
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	var req settingsReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DownloadDir == "" {
-		writeError(w, http.StatusBadRequest, "invalid downloadDir")
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if err := s.deps.Settings.SetDownloadDir(req.DownloadDir); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	if req.DownloadDir != nil {
+		if *req.DownloadDir == "" {
+			writeError(w, http.StatusBadRequest, "invalid downloadDir")
+			return
+		}
+		if err := s.deps.Settings.SetDownloadDir(*req.DownloadDir); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"downloadDir": s.deps.Settings.DownloadDir()})
+	if req.MangaFolder != nil {
+		if err := s.deps.Settings.SetMangaFolder(*req.MangaFolder); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.VolumeNameFormat != nil {
+		if err := s.deps.Settings.SetVolumeFormat(usecase.VolumeFormat{
+			Prefix: req.VolumeNameFormat.Prefix,
+			Digits: req.VolumeNameFormat.Digits,
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, s.settingsPayload())
 }
 
 func (s *Server) pickFolder(w http.ResponseWriter, r *http.Request) {
-	dir, err := s.deps.Settings.PickDownloadDir(r.Context())
-	if err != nil {
+	if _, err := s.deps.Settings.PickDownloadDir(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"downloadDir": dir})
+	writeJSON(w, http.StatusOK, s.settingsPayload())
 }
 
 func writeUseErr(w http.ResponseWriter, err error) {

@@ -57,6 +57,9 @@ function ObraPage() {
   const [submitSessionError, setSubmitSessionError] = useState(false)
   // null = sem override (usa o título original); string = título editado pelo usuário
   const [titleOverride, setTitleOverride] = useState<string | null>(null)
+  // true quando o usuário edita o nome do mangá manualmente — impede que a
+  // restauração da montagem salva (abaixo) sobrescreva o que ele está digitando.
+  const userEditedTitleRef = useRef(false)
 
   const isSessionError = rawError instanceof NoSessionError
 
@@ -65,16 +68,23 @@ function ObraPage() {
   }, [isSessionError, refreshSession])
 
   // Se esta obra já tem uma montagem salva, abre direto em "Montar volumes"
-  // (a não ser que o usuário já tenha trocado o modo manualmente). Usa o resumo
-  // (listMounts) para não baixar as capas só para decidir o modo.
+  // (a não ser que o usuário já tenha trocado o modo manualmente) e restaura o
+  // nome do mangá que o usuário havia editado ao salvá-la — assim "Continuar
+  // montagem" não volta ao título original da fonte. Usa o resumo (listMounts)
+  // para não baixar as capas só para isso.
   useEffect(() => {
     let alive = true
     api
       .listMounts()
       .then((mounts) => {
         if (!alive) return
-        const has = mounts.some((m) => m.source === source && m.slug === slug)
-        if (has && !userPickedModeRef.current) setMode('volume')
+        const mount = mounts.find(
+          (m) => m.source === source && m.slug === slug,
+        )
+        if (!mount) return
+        if (!userPickedModeRef.current) setMode('volume')
+        if (mount.title && !userEditedTitleRef.current)
+          setTitleOverride(mount.title)
       })
       .catch(() => {})
     return () => {
@@ -332,7 +342,10 @@ function ObraPage() {
               id="obra-title"
               type="text"
               value={titleOverride ?? data.manga.title}
-              onChange={(e) => setTitleOverride(e.target.value)}
+              onChange={(e) => {
+                userEditedTitleRef.current = true
+                setTitleOverride(e.target.value)
+              }}
               className="w-full min-w-0 bg-transparent text-2xl font-bold leading-tight tracking-tight text-neutral-100 focus:outline-none sm:text-3xl"
               aria-label="Nome da pasta no disco (título da obra)"
             />

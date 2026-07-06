@@ -1,6 +1,9 @@
 package usecase
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 // DirStore is the storage root the settings can read and change.
 type DirStore interface {
@@ -13,15 +16,51 @@ type FolderPicker interface {
 	Pick(ctx context.Context, startDir string) (string, error)
 }
 
-// Settings manages the download directory preference.
+// SettingsKV persiste preferências chave→valor (SQLite) que não são a pasta de
+// download em si — como o formato do nome dos volumes e a última pasta aberta no
+// modo "Consertar da pasta". Satisfeita por *jobstore.Store.
+type SettingsKV interface {
+	GetSetting(key string) (string, bool, error)
+	SetSetting(key, value string) error
+}
+
+// VolumeFormat é a preferência global de nome dos volumes (prefixo + nº de
+// dígitos), compartilhada entre a aba de montagem e a de revisão/baixar e
+// persistida no SQLite. Prevalece sempre a última escolha.
+type VolumeFormat struct {
+	Prefix string `json:"prefix"` // "none" | "v" | "volume"
+	Digits int    `json:"digits"` // 1 | 2 | 3
+}
+
+// DefaultVolumeFormat: só os 3 dígitos, sem prefixo (ex.: "001").
+var DefaultVolumeFormat = VolumeFormat{Prefix: "none", Digits: 3}
+
+func (f VolumeFormat) valid() bool {
+	switch f.Prefix {
+	case "none", "v", "volume":
+	default:
+		return false
+	}
+	return f.Digits >= 1 && f.Digits <= 3
+}
+
+const (
+	volumeFormatKey = "volume_name_format"
+	mangaFolderKey  = "manga_folder"
+)
+
+// Settings manages the download directory preference plus small persisted
+// preferences (volume-name format, last opened manga folder).
 type Settings struct {
 	store  DirStore
 	picker FolderPicker
+	kv     SettingsKV
 }
 
-// NewSettings builds a Settings use case.
-func NewSettings(store DirStore, picker FolderPicker) *Settings {
-	return &Settings{store: store, picker: picker}
+// NewSettings builds a Settings use case. `kv` pode ser nil (preferências extras
+// caem no padrão e não persistem).
+func NewSettings(store DirStore, picker FolderPicker, kv SettingsKV) *Settings {
+	return &Settings{store: store, picker: picker, kv: kv}
 }
 
 // DownloadDir returns the current download root.
@@ -41,4 +80,68 @@ func (s *Settings) PickDownloadDir(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return dir, nil
+}
+
+// PickFolder abre o seletor nativo de pasta e devolve o caminho escolhido ("" se
+// cancelado) SEM alterar nenhuma preferência — usado pelo modo "Consertar da
+// pasta" para apontar uma pasta de mangá em qualquer lugar do disco.
+func (s *Settings) PickFolder(ctx context.Context) (string, error) {
+	start := s.MangaFolder()
+	if start == "" {
+		start = s.store.Root()
+	}
+	return s.picker.Pick(ctx, start)
+}
+
+// VolumeFormat devolve o formato persistido (ou o padrão, se ausente/ inválido).
+func (s *Settings) VolumeFormat() VolumeFormat {
+	if s.kv == nil {
+		return DefaultVolumeFormat
+	}
+	v, ok, err := s.kv.GetSetting(volumeFormatKey)
+	if err != nil || !ok {
+		return DefaultVolumeFormat
+	}
+	var f VolumeFormat
+	if err := json.Unmarshal([]byte(v), &f); err != nil || !f.valid() {
+		return DefaultVolumeFormat
+	}
+	return f
+}
+
+// SetVolumeFormat persiste o formato do nome dos volumes (valores inválidos caem
+// no padrão).
+func (s *Settings) SetVolumeFormat(f VolumeFormat) error {
+	if !f.valid() {
+		f = DefaultVolumeFormat
+	}
+	if s.kv == nil {
+		return nil
+	}
+	data, err := json.Marshal(f)
+	if err != nil {
+		return err
+	}
+	return s.kv.SetSetting(volumeFormatKey, string(data))
+}
+
+// MangaFolder devolve a última pasta de mangá aberta no modo "Consertar da
+// pasta" ("" se nenhuma).
+func (s *Settings) MangaFolder() string {
+	if s.kv == nil {
+		return ""
+	}
+	v, ok, err := s.kv.GetSetting(mangaFolderKey)
+	if err != nil || !ok {
+		return ""
+	}
+	return v
+}
+
+// SetMangaFolder persiste a última pasta de mangá aberta.
+func (s *Settings) SetMangaFolder(path string) error {
+	if s.kv == nil {
+		return nil
+	}
+	return s.kv.SetSetting(mangaFolderKey, path)
 }

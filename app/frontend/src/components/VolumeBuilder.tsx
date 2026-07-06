@@ -22,17 +22,20 @@ import { FilterChip } from './FilterChip'
 import { HelpButton } from './HelpButton'
 import { useIncremental } from '~/hooks/useIncremental'
 import {
-  DEFAULT_VOLUME_FORMAT,
   DIGITS_OPTIONS,
   PREFIX_OPTIONS,
   formatVolumeName,
-  inferVolumeFormat,
   reformatVolumeName,
   volumeNameExample,
   type VolumeDigits,
   type VolumeNameFormat,
   type VolumePrefix,
 } from '~/lib/volumeName'
+import {
+  loadVolumeFormat,
+  setVolumeFormat,
+  useVolumeFormat,
+} from '~/lib/volumeFormatStore'
 
 let _volCounter = 0
 function nextVolId(): string {
@@ -112,9 +115,10 @@ export function VolumeBuilder({
   thumbUrl,
 }: VolumeBuilderProps) {
   const [volumes, setVolumes] = useState<Volume[]>([])
-  // Formato de nome dos volumes (prefixo + forma dos números). Padrão: "001".
-  const [nameFormat, setNameFormat] =
-    useState<VolumeNameFormat>(DEFAULT_VOLUME_FORMAT)
+  // Formato de nome dos volumes (prefixo + forma dos números). Vem do store
+  // compartilhado, persistido no SQLite — a mesma escolha vale na aba de
+  // revisão/baixar e vice-versa.
+  const nameFormat = useVolumeFormat()
   const [leftFilter, setLeftFilter] = useState('')
   const [leftSelected, setLeftSelected] = useState<Set<string>>(new Set())
   const [targetVolId, setTargetVolId] = useState<string>('')
@@ -160,26 +164,23 @@ export function VolumeBuilder({
   const hydratedRef = useRef(false)
   const [saved, setSaved] = useState(false)
 
-  // Carrega a montagem salva desta obra ao abrir o modo volumes.
+  // Carrega a montagem salva desta obra ao abrir o modo volumes, já reaplicando o
+  // formato de nome persistido (a última escolha global) aos volumes salvos — só
+  // muda prefixo/zeros, o número intrínseco de cada volume é preservado.
   useEffect(() => {
     let alive = true
-    api
-      .getMount(source, slug)
-      .then((m) => {
+    Promise.all([api.getMount(source, slug), loadVolumeFormat()])
+      .then(([m, fmt]) => {
         if (!alive || !m || m.volumes.length === 0) return
         setVolumes(
           m.volumes.map((v) => ({
             id: nextVolId(),
-            name: v.name,
+            name: reformatVolumeName(v.name, fmt),
             label: v.label,
             chapters: v.chapters,
             coverImage: v.coverImage ?? null,
           })),
         )
-        // Reflete no seletor o formato de nome usado na montagem salva.
-        const named = m.volumes.find((v) => /\d/.test(v.name))
-        const inferred = named ? inferVolumeFormat(named.name) : null
-        if (inferred) setNameFormat(inferred)
         setCurrentVolIdx(0)
         setSaved(true)
       })
@@ -377,10 +378,11 @@ export function VolumeBuilder({
     setVolumes((prev) => prev.map((v) => (v.id === id ? { ...v, name } : v)))
   }
 
-  // Troca o formato do nome e reaplica a todos os volumes já montados,
-  // preservando o número intrínseco de cada um (só muda prefixo/zeros).
+  // Troca o formato do nome (persiste no SQLite e reflete na aba de revisão) e
+  // reaplica a todos os volumes já montados, preservando o número intrínseco de
+  // cada um (só muda prefixo/zeros).
   function changeNameFormat(fmt: VolumeNameFormat) {
-    setNameFormat(fmt)
+    setVolumeFormat(fmt)
     setVolumes((prev) =>
       prev.map((v) => ({ ...v, name: reformatVolumeName(v.name, fmt) })),
     )

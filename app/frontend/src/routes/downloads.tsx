@@ -48,6 +48,20 @@ import {
   takePendingDownload,
   type PendingDownload,
 } from '~/lib/pendingDownload'
+import {
+  loadVolumeFormat,
+  setVolumeFormat,
+  useVolumeFormat,
+} from '~/lib/volumeFormatStore'
+import {
+  DIGITS_OPTIONS,
+  PREFIX_OPTIONS,
+  reformatVolumeName,
+  volumeNameExample,
+  type VolumeDigits,
+  type VolumeNameFormat,
+  type VolumePrefix,
+} from '~/lib/volumeName'
 
 /** Opções de retry: sem nada = tudo que falta; volume/capítulo restringe.
  *  force = re-baixa mesmo já concluído (arquivos sumiram da pasta). */
@@ -79,12 +93,42 @@ function DownloadsPage() {
   // Seleção de volumes vinda da obra, aguardando o usuário escolher o que baixar.
   const [pending, setPending] = useState<PendingDownload | null>(null)
   const [staging, setStaging] = useState(false)
+  // Formato do nome dos volumes — mesmo store da aba de montagem (persistido no
+  // SQLite). Mexer aqui reflete lá e vice-versa; prevalece a última escolha.
+  const nameFormat = useVolumeFormat()
 
-  // Consome a seleção pendente uma vez, ao montar a tela.
+  // Consome a seleção pendente uma vez, ao montar a tela, já reaplicando o formato
+  // persistido aos nomes dos volumes (mantém a paridade com a aba de montagem).
   useEffect(() => {
     const p = takePendingDownload()
-    if (p && p.volumes.length > 0) setPending(p)
+    if (!p || p.volumes.length === 0) return
+    void loadVolumeFormat().then((fmt) => {
+      setPending({
+        ...p,
+        volumes: p.volumes.map((v) => ({
+          ...v,
+          name: reformatVolumeName(v.name, fmt),
+        })),
+      })
+    })
   }, [])
+
+  // Troca o formato (persiste no SQLite e reflete na aba de montagem) e reaplica
+  // aos volumes pendentes, preservando o número intrínseco de cada um.
+  function changeFormat(fmt: VolumeNameFormat) {
+    setVolumeFormat(fmt)
+    setPending((prev) =>
+      prev
+        ? {
+            ...prev,
+            volumes: prev.volumes.map((v) => ({
+              ...v,
+              name: reformatVolumeName(v.name, fmt),
+            })),
+          }
+        : prev,
+    )
+  }
 
   const { data, error, rawError } = useAsync(() => api.listJobs(), [listTick])
 
@@ -362,6 +406,8 @@ function DownloadsPage() {
             <PendingVolumesPanel
               pending={pending}
               busy={staging}
+              nameFormat={nameFormat}
+              onChangeFormat={changeFormat}
               onDownloadVolume={(v) => void startVolumes([v])}
               onDownloadAll={() => void startVolumes(pending.volumes)}
               onDiscard={() => setPending(null)}
@@ -420,12 +466,16 @@ function numberRange(chs: { number: string }[]): string {
 function PendingVolumesPanel({
   pending,
   busy,
+  nameFormat,
+  onChangeFormat,
   onDownloadVolume,
   onDownloadAll,
   onDiscard,
 }: {
   pending: PendingDownload
   busy: boolean
+  nameFormat: VolumeNameFormat
+  onChangeFormat: (fmt: VolumeNameFormat) => void
   onDownloadVolume: (v: VolumeInput) => void
   onDownloadAll: () => void
   onDiscard: () => void
@@ -476,6 +526,59 @@ function PendingVolumesPanel({
         >
           Descartar
         </button>
+      </div>
+
+      {/* Formato do nome dos volumes (mesma escolha da aba de montagem) */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2">
+        <span className="font-mono text-[11px] uppercase tracking-wider text-neutral-500">
+          Formato do nome
+        </span>
+        <label className="flex items-center gap-1.5 text-xs text-neutral-400">
+          Prefixo
+          <select
+            value={nameFormat.prefix}
+            onChange={(e) =>
+              onChangeFormat({
+                ...nameFormat,
+                prefix: e.target.value as VolumePrefix,
+              })
+            }
+            className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-neutral-500 focus:outline-none"
+            aria-label="Prefixo do nome do volume"
+          >
+            {PREFIX_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-neutral-400">
+          Números
+          <select
+            value={nameFormat.digits}
+            onChange={(e) =>
+              onChangeFormat({
+                ...nameFormat,
+                digits: Number(e.target.value) as VolumeDigits,
+              })
+            }
+            className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-neutral-500 focus:outline-none"
+            aria-label="Forma dos números do volume"
+          >
+            {DIGITS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="ml-auto flex items-center gap-1.5 font-mono text-xs text-neutral-500">
+          ex.:
+          <span className="rounded border border-neutral-700 bg-neutral-950 px-2 py-0.5 text-neutral-200">
+            {volumeNameExample(nameFormat)}
+          </span>
+        </span>
       </div>
 
       {/* Abas: baixar seguro (padrão) x tudo de uma vez */}
@@ -1226,6 +1329,8 @@ function JobCard({
 }: JobCardProps) {
   const [expanded, setExpanded] = useState(false)
   const { block } = useSessionContext()
+  // Adaptador estável do editor "Consertar volumes" para este download.
+  const jobEditor = useMemo(() => api.jobEditor(job.jobId), [job.jobId])
 
   const { data: detail } = useAsync(
     () => api.getJob(job.jobId),
@@ -1492,7 +1597,7 @@ function JobCard({
           </div>
           {showEditor && (
             <VolumeEditor
-              jobId={job.jobId}
+              editor={jobEditor}
               title={job.title}
               onClose={() => setShowEditor(false)}
             />
