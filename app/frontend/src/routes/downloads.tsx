@@ -238,12 +238,16 @@ function DownloadsPage() {
     return true
   })
 
+  // Agrupa os jobs pelo mangá pai (source+slug). Cada mangá vira um card só,
+  // com seus volumes/downloads aninhados dentro (ver MangaCard).
+  const mangaGroups = groupByManga(filteredList)
+
   const hasPending = pending != null && pending.volumes.length > 0
 
   // Coluna dos downloads (pasta + lista). Fica sozinha (largura cheia) quando não
   // há volumes para escolher, ou lado a lado com o painel de seleção quando há.
   const downloadsColumn = (
-    <div className="min-w-0 space-y-5">
+    <div className="flex min-w-0 flex-col gap-5 lg:min-h-0 lg:flex-1">
       {/* Pasta de downloads */}
       <DownloadFolderSection />
 
@@ -261,7 +265,7 @@ function DownloadsPage() {
       ) : list.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
           {/* Cabeçalho: contagem e filtros */}
           <DashboardHeader
             total={list.length}
@@ -290,24 +294,38 @@ function DownloadsPage() {
             />
           ))}
 
-          {/* Lista de jobs com altura fixa e scroll */}
-          <div className="retro-scroll max-h-[60vh] space-y-2 overflow-y-auto pr-1">
+          {/* Lista de mangás (cada um agrupa seus volumes) - scroll interno;
+              no desktop preenche a coluna, no mobile mantém o teto de 60vh. */}
+          <div className="retro-scroll max-h-[60vh] space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:min-h-0 lg:flex-1">
             {filteredList.length === 0 ? (
               <div className="py-10 text-center font-mono text-sm text-neutral-600">
                 Nenhum download nesta categoria.
               </div>
             ) : (
-              filteredList.map((job) => (
-                <JobCard
-                  key={job.jobId}
-                  job={job}
-                  jobProgress={progressMap[job.jobId] ?? {}}
-                  listTick={listTick}
-                  onCancel={() => void cancel(job.jobId)}
-                  onRetry={(opts) => void retry(job.jobId, opts)}
-                  onRemove={() => remove(job.jobId)}
-                />
-              ))
+              mangaGroups.map((g) =>
+                g.jobs.length === 1 ? (
+                  // Mangá com um único download: mostra o card direto, sem aninhar.
+                  <JobCard
+                    key={g.jobs[0].jobId}
+                    job={g.jobs[0]}
+                    jobProgress={progressMap[g.jobs[0].jobId] ?? {}}
+                    listTick={listTick}
+                    onCancel={() => void cancel(g.jobs[0].jobId)}
+                    onRetry={(opts) => void retry(g.jobs[0].jobId, opts)}
+                    onRemove={() => remove(g.jobs[0].jobId)}
+                  />
+                ) : (
+                  <MangaCard
+                    key={g.key}
+                    group={g}
+                    progressMap={progressMap}
+                    listTick={listTick}
+                    onCancel={(id) => void cancel(id)}
+                    onRetry={(id, opts) => void retry(id, opts)}
+                    onRemove={remove}
+                  />
+                ),
+              )
             )}
           </div>
         </div>
@@ -326,18 +344,20 @@ function DownloadsPage() {
           : ''
       }
     >
-      <div className={`mx-auto space-y-5 ${hasPending ? 'max-w-7xl' : ''}`}>
+      <div
+        className={`mx-auto flex flex-col gap-4 lg:h-[calc(100dvh-10.5rem)] lg:min-h-0 ${hasPending ? 'max-w-7xl' : ''}`}
+      >
         {/* Navegação de volta */}
         <Link
           to="/"
-          className="flex w-fit items-center gap-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-200"
+          className="flex w-fit shrink-0 items-center gap-1.5 text-sm text-neutral-500 transition-colors hover:text-neutral-200"
         >
           <ArrowLeft size={15} aria-hidden="true" />
           Voltar
         </Link>
 
         {hasPending ? (
-          <div className="grid items-start gap-6 lg:grid-cols-2">
+          <div className="grid gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-2 lg:items-stretch">
             {/* Esquerda: seleção de volumes recém-montados */}
             <PendingVolumesPanel
               pending={pending}
@@ -434,7 +454,7 @@ function PendingVolumesPanel({
   const { visible, sentinelRef, hasMore } = useIncremental(filtered, 48)
 
   return (
-    <div className="space-y-3 rounded-xl border border-violet-800/40 bg-violet-950/20 p-4">
+    <div className="flex flex-col gap-3 rounded-xl border border-violet-800/40 bg-violet-950/20 p-4 lg:h-full lg:min-h-0">
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-center gap-3">
         <Layers size={16} className="text-violet-300" aria-hidden="true" />
@@ -561,8 +581,9 @@ function PendingVolumesPanel({
         )}
       </div>
 
-      {/* Grade de volumes (rolagem interna para não esticar a página) */}
-      <div className="max-h-[38rem] overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]">
+      {/* Grade de volumes (rolagem interna para não esticar a página).
+          No desktop preenche a coluna; no mobile mantém o teto de 38rem. */}
+      <div className="max-h-[38rem] overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin] lg:max-h-none lg:min-h-0 lg:flex-1">
         {filtered.length === 0 ? (
           <p className="py-10 text-center text-sm text-neutral-600">
             Nenhum volume encontrado para “{query}”.
@@ -967,6 +988,180 @@ function jobBarClass(status: JobStatus): string {
   if (status === 'completed') return 'bg-emerald-500'
   if (status === 'failed') return 'bg-red-500/80'
   return 'bg-neutral-700'
+}
+
+// ── MangaCard (agrupa os downloads de um mesmo mangá pai) ─────────────────────
+
+/** Grupo de jobs (downloads/volumes) de um mesmo mangá pai. */
+interface MangaGroup {
+  /** Chave estável do mangá: source + slug (ou título como fallback). */
+  key: string
+  source: string
+  title: string
+  jobs: JobSummary[]
+  /** Somatório de capítulos de todos os downloads do mangá. */
+  totalChapters: number
+  completedChapters: number
+  /** Downloads em andamento/fila neste mangá. */
+  activeCount: number
+}
+
+/** Agrupa os jobs pelo mangá pai (source+slug) preservando a ordem de aparição. */
+function groupByManga(jobs: JobSummary[]): MangaGroup[] {
+  const groups: MangaGroup[] = []
+  const byKey = new Map<string, MangaGroup>()
+  for (const job of jobs) {
+    const key = `${job.source}::${job.slug || job.title}`
+    let g = byKey.get(key)
+    if (!g) {
+      g = {
+        key,
+        source: job.source,
+        title: job.title,
+        jobs: [],
+        totalChapters: 0,
+        completedChapters: 0,
+        activeCount: 0,
+      }
+      byKey.set(key, g)
+      groups.push(g)
+    }
+    g.jobs.push(job)
+    g.totalChapters += job.totalChapters
+    g.completedChapters += job.completedChapters
+    if (job.status === 'running' || job.status === 'queued') g.activeCount++
+  }
+  return groups
+}
+
+function MangaCard({
+  group,
+  progressMap,
+  listTick,
+  onCancel,
+  onRetry,
+  onRemove,
+}: {
+  group: MangaGroup
+  progressMap: LiveProgress
+  listTick: number
+  onCancel: (id: string) => void
+  onRetry: (id: string, opts?: RetryOpts) => void
+  onRemove: (id: string) => void
+}) {
+  // Abre por padrão quando há download em andamento no mangá.
+  const [expanded, setExpanded] = useState(group.activeCount > 0)
+  // Scroll infinito dos volumes: revela os downloads em lotes.
+  const { visible, sentinelRef, hasMore } = useIncremental(group.jobs, 8)
+
+  const pct =
+    group.totalChapters > 0
+      ? (group.completedChapters / group.totalChapters) * 100
+      : 0
+  // Status agregado só para colorir a barra do mangá.
+  const status: JobStatus =
+    group.activeCount > 0
+      ? 'running'
+      : group.completedChapters >= group.totalChapters
+        ? 'completed'
+        : 'failed'
+  const volumeCount = group.jobs.length
+
+  return (
+    <div className="rounded-xl border border-neutral-800 bg-neutral-900/40">
+      {/* Cabeçalho do mangá - clicável para expandir os downloads */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left"
+        aria-expanded={expanded}
+        aria-controls={`manga-jobs-${group.key}`}
+      >
+        <BookOpen
+          size={16}
+          className="shrink-0 text-violet-300"
+          aria-hidden="true"
+        />
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <p className="truncate text-sm font-semibold leading-snug text-neutral-100">
+            {group.title}
+          </p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-[11px] text-neutral-400">
+              {volumeCount} download{volumeCount !== 1 ? 's' : ''}
+            </span>
+            <span
+              className="font-mono text-[11px] text-neutral-700"
+              aria-hidden="true"
+            >
+              ·
+            </span>
+            <span className="font-mono text-[11px] text-neutral-500">
+              {group.completedChapters}/{group.totalChapters} cap.
+            </span>
+            {group.activeCount > 0 && (
+              <span className="flex items-center gap-1 rounded border border-sky-900/60 bg-sky-950/40 px-1.5 py-0.5 font-mono text-[10px] text-sky-400">
+                <Loader2 size={9} className="animate-spin" aria-hidden="true" />
+                {group.activeCount} ativo{group.activeCount !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Barra de progresso agregada (sm e acima) */}
+        <div className="hidden w-28 shrink-0 sm:block">
+          <div
+            className="h-1 overflow-hidden rounded-full bg-neutral-800"
+            role="progressbar"
+            aria-valuenow={Math.round(pct)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`Progresso de ${group.title}: ${Math.round(pct)}%`}
+          >
+            <div
+              className={`h-full transition-all duration-500 ${jobBarClass(status)}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <p className="mt-0.5 text-right font-mono text-[10px] text-neutral-600">
+            {Math.round(pct)}%
+          </p>
+        </div>
+
+        <span className="shrink-0 text-neutral-600" aria-hidden="true">
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </span>
+      </button>
+
+      {/* Downloads do mangá (volumes), com scroll infinito */}
+      {expanded && (
+        <div
+          id={`manga-jobs-${group.key}`}
+          className="space-y-2 border-t border-neutral-800/60 px-2 py-2 sm:px-3"
+        >
+          {visible.map((job) => (
+            <JobCard
+              key={job.jobId}
+              job={job}
+              jobProgress={progressMap[job.jobId] ?? {}}
+              listTick={listTick}
+              onCancel={() => onCancel(job.jobId)}
+              onRetry={(opts) => onRetry(job.jobId, opts)}
+              onRemove={() => onRemove(job.jobId)}
+            />
+          ))}
+          {hasMore && (
+            <div
+              ref={sentinelRef}
+              className="py-2 text-center font-mono text-[10px] text-neutral-700"
+            >
+              carregando mais volumes…
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── JobCard (colapsável) ──────────────────────────────────────────────────────

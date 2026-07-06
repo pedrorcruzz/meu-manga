@@ -97,6 +97,8 @@ export interface JobSummary {
   jobId: string
   source: string
   title: string
+  /** Slug do mangá pai (vem no fio; usado para agrupar volumes do mesmo mangá). */
+  slug?: string
   status: JobStatus
   totalChapters: number
   completedChapters: number
