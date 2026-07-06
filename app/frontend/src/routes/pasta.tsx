@@ -123,7 +123,7 @@ function MeusMangasPage() {
       <div className="flex items-center gap-2.5">
         <Library size={20} className="text-violet-400/80" aria-hidden="true" />
         <div>
-          <h1 className="text-xl font-semibold text-neutral-100">Meus Mangas</h1>
+          <h1 className="text-xl font-semibold text-neutral-100">Meus Mangás</h1>
           <p className="text-xs text-neutral-500">
             Aponte a pasta central onde ficam suas obras e organize os volumes
             lendo direto do disco.
@@ -194,10 +194,10 @@ function MeusMangasPage() {
                 pasta central (a que contém as pastas das obras).
               </p>
               <Link
-                to="/downloads"
+                to="/"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-300 transition-colors hover:bg-neutral-800"
               >
-                <Download size={14} aria-hidden="true" />
+                <Search size={14} aria-hidden="true" />
                 Baixar um mangá
               </Link>
             </div>
@@ -286,7 +286,7 @@ function LibraryModal({
         <Library size={18} className="text-violet-300" aria-hidden="true" />
         <div className="min-w-0">
           <p className="text-sm font-semibold text-neutral-100">
-            Biblioteca — Meus Mangas
+            Biblioteca — Meus Mangás
           </p>
           <p className="truncate text-xs text-neutral-500">
             {mangas.length} {mangas.length === 1 ? 'obra' : 'obras'} · escolha
