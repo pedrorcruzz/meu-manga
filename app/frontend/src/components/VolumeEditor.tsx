@@ -149,26 +149,39 @@ export function VolumeEditor({
     void run(() => editor.moveChapter({ fromVolume, toVolume, chapter }))
   }
 
-  async function setCover(volume: string, mode: 'insert' | 'replace') {
-    const file = await pickImageFile()
-    if (!file) return
-    const image = await fileToDataURL(file)
-    void run(() => editor.setCover({ volume, image, mode }))
+  // ── Ações do VOLUME INTEIRO: aplicam a MESMA operação em TODOS os capítulos ──
+  // (um capítulo de cada vez, sequencial). Servem para mangá em que toda 1ª
+  // página é anúncio/aviso ou toda última é crédito — limpa o volume de uma vez.
+
+  // Remove a 1ª página (001.jpg) de cada capítulo do volume; o backend renumera
+  // o restante de cada um.
+  function removeFirstPageAll(vol: TreeVolume) {
+    void run(async () => {
+      let t: MangaTree | null = null
+      for (const ch of vol.chapters) {
+        if (ch.pages <= 0) continue
+        t = await editor.removeCover(vol.folder, ch.folder)
+      }
+      return t ?? (await editor.getTree())
+    })
   }
 
-  function removeCover(volume: string) {
-    void run(() => editor.removeCover(volume))
-  }
-
-  // Remove a última página do volume: a última página do último capítulo. O
-  // backend renumera sozinho (aqui já é o fim, então nada se desloca).
-  function removeLastPage(vol: TreeVolume) {
-    const last = vol.chapters[vol.chapters.length - 1]
-    if (!last || last.pages <= 0) return
-    const name = `${String(last.pages).padStart(3, '0')}.jpg`
-    void run(() =>
-      editor.deleteTreePage({ volume: vol.folder, chapter: last.folder, name }),
-    )
+  // Remove a última página de cada capítulo do volume. Cada um é mexido uma só
+  // vez, então o nome vem da contagem daquele capítulo na árvore atual.
+  function removeLastPageAll(vol: TreeVolume) {
+    void run(async () => {
+      let t: MangaTree | null = null
+      for (const ch of vol.chapters) {
+        if (ch.pages <= 0) continue
+        const name = `${String(ch.pages).padStart(3, '0')}.jpg`
+        t = await editor.deleteTreePage({
+          volume: vol.folder,
+          chapter: ch.folder,
+          name,
+        })
+      }
+      return t ?? (await editor.getTree())
+    })
   }
 
   // ── Ações escopadas a UM capítulo (dentro do preview) ──────────────────────
@@ -310,8 +323,9 @@ export function VolumeEditor({
               <p className="text-xs leading-relaxed text-neutral-500">
                 Arraste um capítulo para outro volume para movê-lo. Os botões{' '}
                 <span className="text-neutral-400">Volume inteiro</span> no topo
-                de cada volume mexem na capa/páginas do volume (1º/último
-                capítulo).{' '}
+                de cada volume removem a 1ª/última página de{' '}
+                <span className="text-neutral-400">todos os capítulos</span> de
+                uma vez.{' '}
                 <span className="text-neutral-400">Abra um capítulo</span> para
                 reordenar/apagar páginas ou mexer na capa e nas 1ª/última
                 páginas <span className="text-neutral-400">só dele</span>. As
@@ -421,10 +435,8 @@ export function VolumeEditor({
                         number: ch.number,
                       })
                     }
-                    onAddCover={() => void setCover(vol.folder, 'insert')}
-                    onReplaceCover={() => void setCover(vol.folder, 'replace')}
-                    onRemoveCover={() => removeCover(vol.folder)}
-                    onRemoveLastPage={() => removeLastPage(vol)}
+                    onRemoveFirstPage={() => removeFirstPageAll(vol)}
+                    onRemoveLastPage={() => removeLastPageAll(vol)}
                     onRename={(oldN, newN) => rename(vol.folder, oldN, newN)}
                     busy={busy}
                     rev={rev}
@@ -557,9 +569,7 @@ interface VolumeSectionProps {
   readOnly?: boolean
   /** Seção de capítulos soltos: sem controles de capa. */
   loose?: boolean
-  onAddCover?: () => void
-  onReplaceCover?: () => void
-  onRemoveCover?: () => void
+  onRemoveFirstPage?: () => void
   onRemoveLastPage?: () => void
 }
 
@@ -577,9 +587,7 @@ function VolumeSection({
   rev,
   readOnly,
   loose,
-  onAddCover,
-  onReplaceCover,
-  onRemoveCover,
+  onRemoveFirstPage,
   onRemoveLastPage,
 }: VolumeSectionProps) {
   const dragging = drag != null && !readOnly
@@ -618,31 +626,18 @@ function VolumeSection({
               Volume inteiro
             </span>
             <CoverButton
-              label="Adicionar capa"
-              icon={<ImagePlus size={11} aria-hidden="true" />}
-              onClick={onAddCover}
-              disabled={busy || vol.chapters.length === 0}
-              title="Capa do VOLUME: cria uma nova 1ª página (001.jpg) no 1º capítulo, empurrando as demais. Para um capítulo específico, abra-o e use as ações de dentro."
-            />
-            <CoverButton
-              label="Trocar 1ª pág."
-              onClick={onReplaceCover}
-              disabled={busy || vol.chapters.length === 0}
-              title="Capa do VOLUME: substitui a 001.jpg do 1º capítulo, sem empurrar as páginas"
-            />
-            <CoverButton
-              label="Remover 1ª pág."
+              label="Remover 1ª pág. de todos"
               icon={<Trash2 size={11} aria-hidden="true" />}
-              onClick={onRemoveCover}
+              onClick={onRemoveFirstPage}
               disabled={busy || vol.chapters.length === 0}
-              title="Capa do VOLUME: apaga a 001.jpg do 1º capítulo e renumera o restante"
+              title="Apaga a 1ª página (001.jpg) de TODOS os capítulos do volume e renumera o restante de cada um"
             />
             <CoverButton
-              label="Remover última pág."
+              label="Remover última pág. de todos"
               icon={<Trash2 size={11} aria-hidden="true" />}
               onClick={onRemoveLastPage}
               disabled={busy || vol.chapters.length === 0}
-              title="Apaga a última página do ÚLTIMO capítulo do volume"
+              title="Apaga a última página de TODOS os capítulos do volume"
             />
           </div>
         )}
