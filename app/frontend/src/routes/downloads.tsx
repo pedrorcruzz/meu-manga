@@ -2,6 +2,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowDownUp,
   ArrowLeft,
   BookOpen,
   CheckCircle2,
@@ -447,6 +448,7 @@ function DownloadsPage() {
                     onCancel={() => void cancel(g.jobs[0].jobId)}
                     onRetry={(opts) => void retry(g.jobs[0].jobId, opts)}
                     onRemove={() => remove(g.jobs[0].jobId)}
+                    onRefresh={() => setListTick((t) => t + 1)}
                   />
                 ) : (
                   <MangaCard
@@ -457,6 +459,7 @@ function DownloadsPage() {
                     onCancel={(id) => void cancel(id)}
                     onRetry={(id, opts) => void retry(id, opts)}
                     onRemove={remove}
+                    onRefresh={() => setListTick((t) => t + 1)}
                   />
                 ),
               )
@@ -617,6 +620,9 @@ function PendingVolumesPanel({
     return c
   }, [pending.volumes, statuses])
 
+  // Ordenação dos volumes (padrão: mais recentes primeiro).
+  const [sort, setSort] = useState<'recent' | 'old'>('recent')
+
   // Busca por volume (nome ou número de capítulo).
   const [query, setQuery] = useState('')
   const filtered = useMemo(() => {
@@ -637,8 +643,19 @@ function PendingVolumesPanel({
     })
   }, [pending.volumes, query, statusFilter, statuses])
 
+  // Aplica a ordenação por número de volume (recentes = maiores primeiro).
+  const sorted = useMemo(() => {
+    const arr = [...filtered]
+    arr.sort((a, b) => {
+      const na = volumeNumber(a.name) ?? 0
+      const nb = volumeNumber(b.name) ?? 0
+      return sort === 'recent' ? nb - na : na - nb
+    })
+    return arr
+  }, [filtered, sort])
+
   // Renderiza as capas em lotes (scroll infinito) para aguentar coleções grandes.
-  const { visible, sentinelRef, hasMore } = useIncremental(filtered, 48)
+  const { visible, sentinelRef, hasMore } = useIncremental(sorted, 48)
 
   return (
     <>
@@ -751,21 +768,13 @@ function PendingVolumesPanel({
 
       {/* Explicação + ação da aba ativa */}
       {tab === 'safe' ? (
-        <p className="flex items-start gap-1.5 rounded-lg border border-emerald-800/40 bg-emerald-950/20 p-3 text-xs leading-relaxed text-emerald-200/80">
-          <ShieldCheck
-            size={13}
-            className="mt-0.5 shrink-0"
-            aria-hidden="true"
-          />
+        <p className="flex items-center gap-1.5 rounded-lg border border-emerald-800/40 bg-emerald-950/20 px-2.5 py-1.5 text-[11px] leading-snug text-emerald-200/80">
+          <ShieldCheck size={12} className="shrink-0" aria-hidden="true" />
           <span>
-            <span className="font-semibold text-emerald-200">Recomendado.</span>{' '}
-            Escolha um volume abaixo e baixe{' '}
-            <span className="font-semibold text-emerald-100">um por vez</span>.
-            Quando ele terminar, espere{' '}
-            <span className="font-semibold text-emerald-100">15–20 min</span>{' '}
-            antes de baixar o próximo — assim o site não detecta “atividade
-            incomum” e não te bloqueia. Você escolhe a ordem; o que não baixar
-            agora fica aqui.
+            <span className="font-semibold text-emerald-200">Recomendado:</span>{' '}
+            um volume por vez, com{' '}
+            <span className="font-semibold text-emerald-100">15–20 min</span> de
+            intervalo — evita bloqueio por “atividade incomum”.
           </span>
         </p>
       ) : (
@@ -868,6 +877,19 @@ function PendingVolumesPanel({
             </span>
           </button>
         ))}
+        {/* Ordenação (padrão: mais recentes) */}
+        <label className="ml-auto flex items-center gap-1.5 text-[11px] text-neutral-500">
+          <ArrowDownUp size={12} aria-hidden="true" />
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as 'recent' | 'old')}
+            className="rounded-md border border-neutral-800 bg-neutral-900/60 px-2 py-1 font-mono text-[11px] text-neutral-300 focus:border-neutral-600 focus:outline-none"
+            aria-label="Ordenar volumes"
+          >
+            <option value="recent">Mais recentes</option>
+            <option value="old">Mais antigos</option>
+          </select>
+        </label>
       </div>
 
       {/* Grade de volumes (rolagem interna para não esticar a página).
@@ -1503,6 +1525,7 @@ function MangaCard({
   onCancel,
   onRetry,
   onRemove,
+  onRefresh,
 }: {
   group: MangaGroup
   progressMap: LiveProgress
@@ -1510,6 +1533,7 @@ function MangaCard({
   onCancel: (id: string) => void
   onRetry: (id: string, opts?: RetryOpts) => void
   onRemove: (id: string) => void
+  onRefresh: () => void
 }) {
   // Abre por padrão quando há download em andamento no mangá.
   const [expanded, setExpanded] = useState(group.activeCount > 0)
@@ -1616,6 +1640,7 @@ function MangaCard({
               onCancel={() => onCancel(job.jobId)}
               onRetry={(opts) => onRetry(job.jobId, opts)}
               onRemove={() => onRemove(job.jobId)}
+              onRefresh={onRefresh}
             />
           ))}
           {hasMore && (
@@ -1641,6 +1666,8 @@ interface JobCardProps {
   onCancel: () => void
   onRetry: (opts?: RetryOpts) => void
   onRemove: () => void
+  /** Recarrega a lista de downloads (ex.: após consertar/apagar na pasta). */
+  onRefresh: () => void
 }
 
 /** Grupo de capítulos de um mesmo volume dentro de um job. */
@@ -1691,6 +1718,7 @@ function JobCard({
   onCancel,
   onRetry,
   onRemove,
+  onRefresh,
 }: JobCardProps) {
   const [expanded, setExpanded] = useState(false)
   const { block } = useSessionContext()
@@ -1959,12 +1987,62 @@ function JobCard({
         </div>
       </div>
 
-      {/* Área expandida: capítulos, agrupados por volume */}
+      {/* Popup de progresso: capítulos do volume, agrupados */}
       {expanded && (
         <div
-          id={`job-tasks-${job.jobId}`}
-          className="border-t border-neutral-800/60 px-4 py-3"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Progresso de ${volumeLabel}`}
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setExpanded(false)
+          }}
         >
+          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-2xl">
+            {/* Cabeçalho do popup */}
+            <div className="flex items-center gap-3 border-b border-neutral-800 p-4">
+              <div className="relative flex aspect-[3/4] w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gradient-to-br from-neutral-800 to-neutral-950">
+                {jobCover ? (
+                  <img
+                    src={jobCover}
+                    alt={`Capa de ${volumeLabel}`}
+                    className="h-full w-full object-cover"
+                  />
+                ) : volNums.length > 0 ? (
+                  <span className="font-mono text-[10px] font-bold text-neutral-400">
+                    {String(volNums[0]).padStart(3, '0')}
+                  </span>
+                ) : (
+                  <BookOpen
+                    size={14}
+                    className="text-neutral-600"
+                    aria-hidden="true"
+                  />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-sm font-semibold text-neutral-100">
+                  {volumeLabel}
+                </h2>
+                <p className="font-mono text-[11px] text-neutral-500">
+                  {STATUS_LABEL[job.status] ?? job.status} ·{' '}
+                  {job.completedChapters}/{job.totalChapters} cap.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                aria-label="Fechar"
+                className="shrink-0 rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {/* Corpo rolável */}
+            <div
+              id={`job-tasks-${job.jobId}`}
+              className="min-h-0 flex-1 overflow-y-auto p-4"
+            >
           {/* Conferir na pasta real (o histórico pode dizer baixado à toa) */}
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <button
@@ -2025,7 +2103,13 @@ function JobCard({
               // Aberto pela tela de downloads: foca só o volume deste card
               // (com opção de ver todos). Vários volumes = abre com todos.
               focusVolume={volNums.length === 1 ? volNums[0] : undefined}
-              onClose={() => setShowEditor(false)}
+              onClose={() => {
+                setShowEditor(false)
+                // Reflete na hora o que foi mexido na pasta (capas, exclusões):
+                // recarrega a árvore/capa e re-confere o disco se já conferido.
+                onRefresh()
+                if (diskMap) void verifyDisk()
+              }}
             />
           )}
           {detail ? (
@@ -2155,6 +2239,8 @@ function JobCard({
               Carregando capítulos…
             </div>
           )}
+            </div>
+          </div>
         </div>
       )}
     </div>
