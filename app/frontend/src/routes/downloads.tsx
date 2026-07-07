@@ -7,6 +7,7 @@ import {
   BookOpen,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Clock,
   Download,
@@ -1535,8 +1536,8 @@ function MangaCard({
   onRemove: (id: string) => void
   onRefresh: () => void
 }) {
-  // Abre por padrão quando há download em andamento no mangá.
-  const [expanded, setExpanded] = useState(group.activeCount > 0)
+  // Popup com os volumes do mangá (baixando / concluídos).
+  const [expanded, setExpanded] = useState(false)
   // Scroll infinito dos volumes: revela os downloads em lotes.
   const { visible, sentinelRef, hasMore } = useIncremental(group.jobs, 8)
 
@@ -1559,13 +1560,12 @@ function MangaCard({
 
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/40">
-      {/* Cabeçalho do mangá - clicável para expandir os downloads */}
+      {/* Cabeçalho do mangá - clicável para abrir o popup dos volumes */}
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => setExpanded(true)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left"
-        aria-expanded={expanded}
-        aria-controls={`manga-jobs-${group.key}`}
+        aria-haspopup="dialog"
       >
         <BookOpen
           size={16}
@@ -1621,36 +1621,97 @@ function MangaCard({
         </div>
 
         <span className="shrink-0 text-neutral-600" aria-hidden="true">
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          <ChevronRight size={14} />
         </span>
       </button>
 
-      {/* Downloads do mangá (volumes), com scroll infinito */}
+      {/* Popup com os volumes do mangá (baixando / concluídos), scroll infinito */}
       {expanded && (
         <div
-          id={`manga-jobs-${group.key}`}
-          className="space-y-2 border-t border-neutral-800/60 px-2 py-2 sm:px-3"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Volumes de ${group.title}`}
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setExpanded(false)
+          }}
         >
-          {visible.map((job) => (
-            <JobCard
-              key={job.jobId}
-              job={job}
-              jobProgress={progressMap[job.jobId] ?? {}}
-              listTick={listTick}
-              onCancel={() => onCancel(job.jobId)}
-              onRetry={(opts) => onRetry(job.jobId, opts)}
-              onRemove={() => onRemove(job.jobId)}
-              onRefresh={onRefresh}
-            />
-          ))}
-          {hasMore && (
-            <div
-              ref={sentinelRef}
-              className="py-2 text-center font-mono text-[10px] text-neutral-700"
-            >
-              carregando mais volumes…
+          <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 shadow-2xl">
+            {/* Cabeçalho do popup */}
+            <div className="flex items-center gap-3 border-b border-neutral-800 p-4">
+              <BookOpen
+                size={18}
+                className="shrink-0 text-violet-300"
+                aria-hidden="true"
+              />
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-sm font-semibold text-neutral-100">
+                  {group.title}
+                </h2>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <span className="font-mono text-[11px] text-neutral-400">
+                    {completedVolumes} volume{completedVolumes !== 1 ? 's' : ''}{' '}
+                    baixado
+                    {completedVolumes !== 1 ? 's' : ''}
+                  </span>
+                  <span
+                    className="font-mono text-[11px] text-neutral-700"
+                    aria-hidden="true"
+                  >
+                    ·
+                  </span>
+                  <span className="font-mono text-[11px] text-neutral-500">
+                    {group.completedChapters}/{group.totalChapters} cap.
+                  </span>
+                  {group.activeCount > 0 && (
+                    <span className="flex items-center gap-1 rounded border border-sky-900/60 bg-sky-950/40 px-1.5 py-0.5 font-mono text-[10px] text-sky-400">
+                      <Loader2
+                        size={9}
+                        className="animate-spin"
+                        aria-hidden="true"
+                      />
+                      {group.activeCount} ativo
+                      {group.activeCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                aria-label="Fechar"
+                className="shrink-0 rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-100"
+              >
+                <X size={18} />
+              </button>
             </div>
-          )}
+            {/* Corpo rolável com os volumes */}
+            <div
+              id={`manga-jobs-${group.key}`}
+              className="retro-scroll min-h-0 flex-1 space-y-2 overflow-y-auto p-4"
+            >
+              {visible.map((job) => (
+                <JobCard
+                  key={job.jobId}
+                  job={job}
+                  jobProgress={progressMap[job.jobId] ?? {}}
+                  listTick={listTick}
+                  onCancel={() => onCancel(job.jobId)}
+                  onRetry={(opts) => onRetry(job.jobId, opts)}
+                  onRemove={() => onRemove(job.jobId)}
+                  onRefresh={onRefresh}
+                />
+              ))}
+              {hasMore && (
+                <div
+                  ref={sentinelRef}
+                  className="py-2 text-center font-mono text-[10px] text-neutral-700"
+                >
+                  carregando mais volumes…
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
