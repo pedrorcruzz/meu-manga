@@ -1270,58 +1270,109 @@ function CaptchaJobAlert({
   )
   if (captchaTasks.length === 0) return null
 
+  return <CaptchaJobAlertView title={title} captchaTasks={captchaTasks} />
+}
+
+// View compacta e recolhível do alerta de captcha. Antes listava TODOS os
+// capítulos que falharam de uma vez: quando o captcha derruba dezenas/centenas
+// de capítulos, essa lista virava uma parede que empurrava e tampava os botões
+// "Refazer o que faltou" dos volumes. Agora fica recolhida por padrão e, quando
+// aberta, a lista tem altura limitada com scroll - basta UM link para resolver.
+function CaptchaJobAlertView({
+  title,
+  captchaTasks,
+}: {
+  title: string
+  captchaTasks: ChapterTask[]
+}) {
+  const [open, setOpen] = useState(false)
+  const first = captchaTasks[0]
+
   return (
-    <div className="space-y-3 rounded-xl border border-amber-700/30 bg-amber-950/20 p-4">
+    <div className="rounded-xl border border-amber-700/30 bg-amber-950/20 p-3">
       <div className="flex items-start gap-2.5">
         <AlertTriangle
           size={14}
           className="mt-0.5 shrink-0 text-amber-400"
           aria-hidden="true"
         />
-        <div className="space-y-1">
+        <div className="min-w-0 flex-1 space-y-1">
           <p className="font-mono text-xs font-semibold uppercase tracking-wide text-amber-300">
             Captcha do leitor - {title}
           </p>
           <p className="text-xs leading-relaxed text-amber-200/70">
-            O leitor de mangá tem seu próprio anti-bot. Para resolver, abra{' '}
+            O leitor tem seu próprio anti-bot. Abra{' '}
             <span className="font-semibold text-amber-200">
-              qualquer capítulo de qualquer mangá
+              um capítulo qualquer
             </span>{' '}
-            no Navegador (pode ser um dos links abaixo), passe pelo captcha e{' '}
+            no Navegador, passe pelo captcha e{' '}
             <span className="font-semibold text-amber-200">volte aqui</span>.
-            Depois é só usar{' '}
+            Depois use{' '}
             <span className="font-semibold text-amber-200">
               Refazer o que faltou
             </span>{' '}
-            no card - ele repega todos os capítulos que deram erro.
+            - ele repega todos de uma vez.
           </p>
-        </div>
-      </div>
-      <ul className="space-y-1 pl-6">
-        {captchaTasks.map((task) => (
-          <li
-            key={task.chapter.id}
-            className="font-mono text-xs text-amber-300"
-          >
+          {/* Atalho: um único link basta para resolver o captcha */}
+          {first && (
             <a
-              href={task.chapter.url}
+              href={first.chapter.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="underline underline-offset-2 hover:text-amber-100"
+              className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-amber-200 underline underline-offset-2 hover:text-amber-100"
             >
-              Cap. {task.chapter.number}
+              Abrir Cap. {first.chapter.number} e resolver
             </a>
-            {task.chapter.title &&
-              task.chapter.title !== task.chapter.number && (
-                <span className="text-amber-400/60">
-                  {' '}
-                  - {task.chapter.title}
-                </span>
-              )}
-            <span className="ml-1 text-amber-500/50">(abrir e resolver)</span>
-          </li>
-        ))}
-      </ul>
+          )}
+        </div>
+      </div>
+
+      {/* Lista completa recolhida por padrão - não tampa mais os botões */}
+      {captchaTasks.length > 1 && (
+        <div className="mt-2 pl-6">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="flex items-center gap-1 font-mono text-[11px] text-amber-400/70 transition-colors hover:text-amber-300"
+          >
+            {open ? (
+              <ChevronUp size={12} aria-hidden="true" />
+            ) : (
+              <ChevronDown size={12} aria-hidden="true" />
+            )}
+            {open
+              ? 'Esconder capítulos'
+              : `Ver os ${captchaTasks.length} capítulos que falharam`}
+          </button>
+          {open && (
+            <ul className="retro-scroll mt-1.5 max-h-32 space-y-1 overflow-y-auto pr-1">
+              {captchaTasks.map((task) => (
+                <li
+                  key={task.chapter.id}
+                  className="font-mono text-xs text-amber-300"
+                >
+                  <a
+                    href={task.chapter.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-2 hover:text-amber-100"
+                  >
+                    Cap. {task.chapter.number}
+                  </a>
+                  {task.chapter.title &&
+                    task.chapter.title !== task.chapter.number && (
+                      <span className="text-amber-400/60">
+                        {' '}
+                        - {task.chapter.title}
+                      </span>
+                    )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   )
 }
