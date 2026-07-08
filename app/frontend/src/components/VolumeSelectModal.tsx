@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   AlertTriangle,
+  ArrowDownUp,
   BookOpen,
   Check,
   ImagePlus,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react'
 import { type Chapter } from '~/api/client'
 import type { Volume } from './VolumeCard'
+import { SortMenu } from './SortMenu'
 import { useIncremental } from '~/hooks/useIncremental'
 import {
   DEFAULT_VOLUME_FORMAT,
@@ -89,6 +91,12 @@ function typicalPerVol(vols: Volume[]): { mode: number; avg: number } | null {
   return { mode, avg }
 }
 
+/** Número real do volume, lido do rótulo/nome (ex.: "Volume 16" → 16). */
+function volumeNumberOf(vol: Volume): number | null {
+  const m = (vol.label ?? vol.name).match(/\d+/)
+  return m ? parseInt(m[0], 10) : null
+}
+
 /** Maior número já usado entre os nomes/rótulos dos volumes. */
 function maxVolNum(vols: Volume[]): number {
   let max = 0
@@ -140,6 +148,8 @@ export function VolumeSelectModal({
     () => new Set(volumes.map((v) => v.id)),
   )
   const [query, setQuery] = useState('')
+  // Ordenação por número do volume (padrão: mais antigos primeiro).
+  const [sort, setSort] = useState<'recent' | 'old'>('old')
 
   // Capítulos sem volume ainda não consumidos em algum volume extra.
   const consumedIds = useMemo(
@@ -213,13 +223,24 @@ export function VolumeSelectModal({
     return allVolumes.filter((v) => matchesQuery(v, q))
   }, [allVolumes, query])
 
+  // Ordena por número real do volume (a fonte pode entregar em ordem decrescente).
+  const sortedVolumes = useMemo(() => {
+    const arr = [...visibleVolumes]
+    arr.sort((a, b) => {
+      const na = volumeNumberOf(a) ?? 0
+      const nb = volumeNumberOf(b) ?? 0
+      return sort === 'recent' ? nb - na : na - nb
+    })
+    return arr
+  }, [visibleVolumes, sort])
+
   // Renderiza as capas em lotes (scroll infinito) para aguentar coleções grandes
   // como One Piece (100+ volumes) sem travar. Seleção/contagem seguem no total.
   const {
     visible: pagedVolumes,
     sentinelRef: volSentinelRef,
     hasMore: volHasMore,
-  } = useIncremental(visibleVolumes, 48)
+  } = useIncremental(sortedVolumes, 48)
 
   // Número real de cada volume (posição na lista completa), para o rótulo "VOLUME N".
   const volNumber = useMemo(
@@ -271,16 +292,6 @@ export function VolumeSelectModal({
     setSelected((prev) => {
       const next = new Set(prev)
       visibleVolumes.forEach((v) => next.delete(v.id))
-      return next
-    })
-  }
-
-  function invert() {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      visibleVolumes.forEach((v) => {
-        next.has(v.id) ? next.delete(v.id) : next.add(v.id)
-      })
       return next
     })
   }
@@ -431,20 +442,26 @@ export function VolumeSelectModal({
           >
             {query ? 'Desmarcar filtrados' : 'Desmarcar tudo'}
           </button>
-          <span className="text-neutral-700" aria-hidden="true">
-            ·
-          </span>
-          <button
-            type="button"
-            onClick={invert}
-            className="text-xs font-medium text-neutral-400 transition-colors hover:text-neutral-200"
-          >
-            Inverter
-          </button>
-          <span className="ml-auto font-mono text-xs text-neutral-500">
-            {query ? `${visibleVolumes.length} achados · ` : ''}
-            {selected.size}/{allVolumes.length} vol.
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+              <ArrowDownUp size={12} aria-hidden="true" />
+              <SortMenu
+                value={sort}
+                onChange={setSort}
+                ariaLabel="Ordenar volumes"
+                options={
+                  [
+                    { value: 'old', label: 'Mais antigos' },
+                    { value: 'recent', label: 'Mais recentes' },
+                  ] as const
+                }
+              />
+            </div>
+            <span className="font-mono text-xs text-neutral-500">
+              {query ? `${visibleVolumes.length} achados · ` : ''}
+              {selected.size}/{allVolumes.length} vol.
+            </span>
+          </div>
         </div>
 
         {/* Corpo com scroll */}
@@ -594,7 +611,8 @@ export function VolumeSelectModal({
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
               {pagedVolumes.map((vol) => {
                 const checked = selected.has(vol.id)
-                const num = volNumber.get(vol.id) ?? 0
+                // Número real do volume (não a posição na grade), para o placeholder.
+                const num = volumeNumberOf(vol) ?? volNumber.get(vol.id) ?? 0
                 const isExtra = extraIds.has(vol.id)
                 const coverErr = coverErrors[vol.id]
                 const cover = effectiveCover(vol)
