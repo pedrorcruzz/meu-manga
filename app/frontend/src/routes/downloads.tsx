@@ -44,6 +44,7 @@ import {
 import { useDownloadEvents } from '~/api/events'
 import { ConfirmDialog } from '~/components/ConfirmDialog'
 import { PageGallery } from '~/components/PageGallery'
+import { SortMenu } from '~/components/SortMenu'
 import { VolumeEditor } from '~/components/VolumeEditor'
 import { useSessionContext } from '~/context/session'
 import { useAsync } from '~/hooks/useAsync'
@@ -621,8 +622,8 @@ function PendingVolumesPanel({
     return c
   }, [pending.volumes, statuses])
 
-  // Ordenação dos volumes (padrão: mais recentes primeiro).
-  const [sort, setSort] = useState<'recent' | 'old'>('recent')
+  // Ordenação dos volumes (padrão: mais antigos primeiro).
+  const [sort, setSort] = useState<'recent' | 'old'>('old')
 
   // Busca por volume (nome ou número de capítulo).
   const [query, setQuery] = useState('')
@@ -878,19 +879,21 @@ function PendingVolumesPanel({
             </span>
           </button>
         ))}
-        {/* Ordenação (padrão: mais recentes) */}
-        <label className="ml-auto flex items-center gap-1.5 text-[11px] text-neutral-500">
+        {/* Ordenação (padrão: mais antigos) — dropdown de UI próprio */}
+        <div className="ml-auto flex items-center gap-1.5 text-[11px] text-neutral-500">
           <ArrowDownUp size={12} aria-hidden="true" />
-          <select
+          <SortMenu
             value={sort}
-            onChange={(e) => setSort(e.target.value as 'recent' | 'old')}
-            className="rounded-md border border-neutral-800 bg-neutral-900/60 px-2 py-1 font-mono text-[11px] text-neutral-300 focus:border-neutral-600 focus:outline-none"
-            aria-label="Ordenar volumes"
-          >
-            <option value="recent">Mais recentes</option>
-            <option value="old">Mais antigos</option>
-          </select>
-        </label>
+            onChange={setSort}
+            ariaLabel="Ordenar volumes"
+            options={
+              [
+                { value: 'old', label: 'Mais antigos' },
+                { value: 'recent', label: 'Mais recentes' },
+              ] as const
+            }
+          />
+        </div>
       </div>
 
       {/* Grade de volumes (rolagem interna para não esticar a página).
