@@ -9,6 +9,10 @@ COVER_MIN := 90
 GO ?= go
 BUN ?= bun
 
+# Deixa go/bun recém-instalados (tarball oficial em /usr/local/go, bun em ~/.bun)
+# no PATH já nesta execução do make, sem precisar reabrir o terminal.
+export PATH := /usr/local/go/bin:$(HOME)/.bun/bin:$(PATH)
+
 .DEFAULT_GOAL := start
 
 .PHONY: help
@@ -16,8 +20,12 @@ help: ## Lista os comandos disponíveis
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
 
+.PHONY: tools
+tools: ## Garante go (versão do go.mod), node, bun e libs do Chromium (macOS/Linux)
+	@bash scripts/install-tools.sh
+
 .PHONY: deps
-deps: ## Instala as dependências só se ainda não estiverem baixadas
+deps: tools ## Garante o toolchain e baixa as dependências só se ainda não estiverem baixadas
 	@if [ ! -d $(FRONTEND_DIR)/node_modules ]; then \
 		echo "→ node_modules ausente — baixando dependências do frontend…"; \
 		cd $(FRONTEND_DIR) && $(BUN) install; \
@@ -77,7 +85,7 @@ localhost: $(RUN_DIR) deps ## Igual ao start, mas em modo dev (Vite HMR, sem bui
 dev: localhost ## Alias de localhost
 
 .PHONY: install
-install: ## Baixa as dependências do backend e frontend
+install: tools ## Instala o toolchain (se preciso) e baixa as dependências do backend e frontend
 	@echo "→ baixando dependências do backend…"
 	@cd $(BACKEND_DIR) && $(GO) mod download
 	@echo "→ baixando dependências do frontend…"
