@@ -9,15 +9,18 @@ import {
   ChevronRight,
   Layers,
   Plus,
+  RotateCcw,
   Save,
   Search,
   Trash2,
+  Undo2,
   X,
   Zap,
 } from 'lucide-react'
 import { api, type Chapter, type VolumeInput } from '~/api/client'
 import { VolumeCard, type Volume } from './VolumeCard'
 import { VolumeSelectModal } from './VolumeSelectModal'
+import { ConfirmDialog } from './ConfirmDialog'
 import { FilterChip } from './FilterChip'
 import { HelpButton } from './HelpButton'
 import { useIncremental } from '~/hooks/useIncremental'
@@ -163,6 +166,14 @@ export function VolumeBuilder({
   // sobrescrever/apagar com o estado vazio inicial.
   const hydratedRef = useRef(false)
   const [saved, setSaved] = useState(false)
+  // Baseline: a montagem que o Volume Inteligente propôs, guardada para os
+  // resets. Vazio quando a montagem é manual (o reset "desfazer edições" some).
+  const [baseline, setBaseline] = useState<Volume[]>([])
+  // Reset aguardando confirmação: 'smart' (recalcula do zero) | 'manual'
+  // (volta ao baseline salvo).
+  const [confirmReset, setConfirmReset] = useState<null | 'smart' | 'manual'>(
+    null,
+  )
 
   // Carrega a montagem salva desta obra ao abrir o modo volumes, já reaplicando o
   // formato de nome persistido (a última escolha global) aos volumes salvos — só
@@ -181,6 +192,17 @@ export function VolumeBuilder({
             coverImage: v.coverImage ?? null,
           })),
         )
+        if (m.baseline && m.baseline.length > 0) {
+          setBaseline(
+            m.baseline.map((v) => ({
+              id: nextVolId(),
+              name: reformatVolumeName(v.name, fmt),
+              label: v.label,
+              chapters: v.chapters,
+              coverImage: v.coverImage ?? null,
+            })),
+          )
+        }
         setCurrentVolIdx(0)
         setSaved(true)
       })
@@ -215,20 +237,58 @@ export function VolumeBuilder({
             coverImage: v.coverImage,
             chapters: v.chapters,
           })),
+          baseline:
+            baseline.length > 0
+              ? baseline.map((v) => ({
+                  name: v.name,
+                  label: v.label,
+                  coverImage: v.coverImage,
+                  chapters: v.chapters,
+                }))
+              : undefined,
         })
         .then(() => setSaved(true))
         .catch(() => {})
     }, 700)
     return () => clearTimeout(t)
-  }, [volumes, source, slug, title, thumbUrl])
+  }, [volumes, baseline, source, slug, title, thumbUrl])
 
   // Descarta a montagem salva desta obra (limpa a tela e o registro no banco).
   function discardSaved() {
     api.removeMount(source, slug).catch(() => {})
     setVolumes([])
+    setBaseline([])
     setCurrentVolIdx(0)
     setTargetVolId('')
     setSaved(false)
+  }
+
+  // ── Resets da montagem ───────────────────────────────────────────────────────
+
+  /**
+   * Reset total: recalcula a montagem do zero como o Volume Inteligente faria
+   * hoje (só os volumes detectados na fonte; capítulos sem volume ficam de fora).
+   * Vira o novo baseline.
+   */
+  function resetToSmart() {
+    const smart = buildSakuraVolumes(chapters, nameFormat)
+    setVolumes(smart)
+    setBaseline(smart.map((v) => ({ ...v, id: nextVolId() })))
+    setCurrentVolIdx(0)
+    setTargetVolId(smart[0]?.id ?? '')
+    setConfirmReset(null)
+  }
+
+  /**
+   * Reset manual: descarta só as edições manuais e restaura exatamente o que o
+   * Volume Inteligente montou (baseline salvo), sem recalcular.
+   */
+  function resetToBaseline() {
+    const restored = baseline.map((v) => ({ ...v, id: nextVolId() }))
+    setVolumes(restored)
+    setCurrentVolIdx(0)
+    setTargetVolId(restored[0]?.id ?? '')
+    setConfirmReset(null)
   }
 
   // ── Estado derivado ──────────────────────────────────────────────────────────
@@ -335,6 +395,9 @@ export function VolumeBuilder({
     setPending(null)
     if (chosen.length === 0) return
     setVolumes(chosen)
+    // O que o Volume Inteligente montou vira o baseline dos resets (cópia com
+    // ids próprios, para não compartilhar referência com os volumes editáveis).
+    setBaseline(chosen.map((v) => ({ ...v, id: nextVolId() })))
     setCurrentVolIdx(0)
     setTargetVolId(chosen[0]?.id ?? '')
     setLeftSelected(new Set())
@@ -686,24 +749,53 @@ export function VolumeBuilder({
             {unassigned.length === 1 ? 'capítulo' : 'capítulos'} sem volume
           </span>
         )}
-        {saved && (
-          <span className="ml-auto flex items-center gap-3">
-            <span
-              className="flex items-center gap-1.5 text-xs text-emerald-400/90"
-              title="Esta montagem é salva automaticamente e volta ao reabrir o app"
-            >
-              <Save size={12} aria-hidden="true" />
-              Montagem salva
-            </span>
-            <button
-              type="button"
-              onClick={discardSaved}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-neutral-500 transition-colors hover:bg-red-950/40 hover:text-red-400"
-              title="Descartar a montagem salva desta obra"
-            >
-              <Trash2 size={12} aria-hidden="true" />
-              Descartar
-            </button>
+        {(saved || baseline.length > 0) && (
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            {baseline.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setConfirmReset('smart')}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-neutral-500 transition-colors hover:bg-violet-950/40 hover:text-violet-300"
+                  title="Recalcular a montagem do zero, como o Volume Inteligente faria hoje"
+                >
+                  <RotateCcw size={12} aria-hidden="true" />
+                  Resetar ao Volume Inteligente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmReset('manual')}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
+                  title="Descartar só as edições manuais e voltar ao que o Volume Inteligente montou"
+                >
+                  <Undo2 size={12} aria-hidden="true" />
+                  Desfazer edições manuais
+                </button>
+                <span className="text-neutral-800" aria-hidden="true">
+                  ·
+                </span>
+              </>
+            )}
+            {saved && (
+              <>
+                <span
+                  className="flex items-center gap-1.5 text-xs text-emerald-400/90"
+                  title="Esta montagem é salva automaticamente e volta ao reabrir o app"
+                >
+                  <Save size={12} aria-hidden="true" />
+                  Montagem salva
+                </span>
+                <button
+                  type="button"
+                  onClick={discardSaved}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-neutral-500 transition-colors hover:bg-red-950/40 hover:text-red-400"
+                  title="Descartar a montagem salva desta obra"
+                >
+                  <Trash2 size={12} aria-hidden="true" />
+                  Descartar
+                </button>
+              </>
+            )}
           </span>
         )}
       </div>
@@ -1181,6 +1273,41 @@ export function VolumeBuilder({
           nameFormat={nameFormat}
           onConfirm={applyPending}
           onClose={() => setPending(null)}
+        />
+      )}
+
+      {/* ── Confirmação dos resets ───────────────────────────────────────────── */}
+      {confirmReset === 'smart' && (
+        <ConfirmDialog
+          title="Resetar ao Volume Inteligente?"
+          message={
+            <>
+              Isso <strong className="text-neutral-200">recalcula a montagem
+              do zero</strong> como o Volume Inteligente faria hoje. Todas as
+              suas personalizações (capítulos movidos, capas, nomes) serão
+              perdidas.
+            </>
+          }
+          confirmLabel="Resetar"
+          tone="danger"
+          onConfirm={resetToSmart}
+          onCancel={() => setConfirmReset(null)}
+        />
+      )}
+      {confirmReset === 'manual' && (
+        <ConfirmDialog
+          title="Desfazer edições manuais?"
+          message={
+            <>
+              Volta a montagem para exatamente o que o{' '}
+              <strong className="text-neutral-200">Volume Inteligente
+              montou</strong>, descartando só as suas edições manuais.
+            </>
+          }
+          confirmLabel="Desfazer"
+          tone="neutral"
+          onConfirm={resetToBaseline}
+          onCancel={() => setConfirmReset(null)}
         />
       )}
     </div>
