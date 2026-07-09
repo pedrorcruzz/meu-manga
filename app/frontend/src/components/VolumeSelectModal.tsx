@@ -12,8 +12,10 @@ import {
   Check,
   ImagePlus,
   Layers,
+  Pencil,
   Plus,
   Search,
+  Trash2,
   X,
 } from 'lucide-react'
 import { type Chapter } from '~/api/client'
@@ -134,14 +136,26 @@ export function VolumeSelectModal({
   const [extraVols, setExtraVols] = useState<Volume[]>([])
   const extraIdRef = useRef(0)
 
-  const allVolumes = useMemo(
-    () => [...volumes, ...extraVols],
-    [volumes, extraVols],
-  )
+  // Personalizações feitas aqui dentro sobre os volumes propostos:
+  // `edits` sobrescreve os capítulos de um volume (add/remove); `removedVolIds`
+  // marca volumes excluídos. Ambos keyed por id (vale p/ propostos e extras).
+  const [edits, setEdits] = useState<Record<string, Chapter[]>>({})
+  const [removedVolIds, setRemovedVolIds] = useState<Set<string>>(new Set())
+  // Volume aberto no editor de capítulos (null = fechado).
+  const [editingVolId, setEditingVolId] = useState<string | null>(null)
+
   const extraIds = useMemo(
     () => new Set(extraVols.map((v) => v.id)),
     [extraVols],
   )
+
+  // Volumes efetivos: propostos + extras, sem os excluídos, com `edits` aplicados.
+  const allVolumes = useMemo(() => {
+    const base = [...volumes, ...extraVols].filter(
+      (v) => !removedVolIds.has(v.id),
+    )
+    return base.map((v) => (edits[v.id] ? { ...v, chapters: edits[v.id] } : v))
+  }, [volumes, extraVols, removedVolIds, edits])
 
   // Começa com todos os volumes propostos marcados.
   const [selected, setSelected] = useState<Set<string>>(
@@ -151,14 +165,41 @@ export function VolumeSelectModal({
   // Ordenação por número do volume (padrão: mais antigos primeiro).
   const [sort, setSort] = useState<'recent' | 'old'>('old')
 
-  // Capítulos sem volume ainda não consumidos em algum volume extra.
-  const consumedIds = useMemo(
-    () => new Set(extraVols.flatMap((v) => v.chapters.map((c) => c.id))),
-    [extraVols],
+  // Ids já atribuídos a algum volume (após edições/exclusões).
+  const assignedIds = useMemo(
+    () => new Set(allVolumes.flatMap((v) => v.chapters.map((c) => c.id))),
+    [allVolumes],
   )
+  // Capítulos "sem volume" ainda não usados em nenhum volume.
   const remainingLeftovers = useMemo(
-    () => leftoverChapters.filter((c) => !consumedIds.has(c.id)),
-    [leftoverChapters, consumedIds],
+    () => leftoverChapters.filter((c) => !assignedIds.has(c.id)),
+    [leftoverChapters, assignedIds],
+  )
+
+  // Universo de capítulos conhecidos (dos volumes propostos + os sem volume),
+  // sem repetição — base do pool de "adicionar ao volume".
+  const allKnownChapters = useMemo(() => {
+    const seen = new Set<string>()
+    const out: Chapter[] = []
+    for (const c of [
+      ...volumes.flatMap((v) => v.chapters),
+      ...leftoverChapters,
+    ]) {
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
+      out.push(c)
+    }
+    return out
+  }, [volumes, leftoverChapters])
+
+  // Capítulos disponíveis para adicionar a um volume: os que não estão em nenhum
+  // volume no momento (inclui os "sem volume" e os que você removeu de volumes).
+  const poolChapters = useMemo(
+    () =>
+      allKnownChapters
+        .filter((c) => !assignedIds.has(c.id))
+        .sort((a, b) => parseFloat(a.number) - parseFloat(b.number)),
+    [allKnownChapters, assignedIds],
   )
 
   const [leftoverSel, setLeftoverSel] = useState<Set<string>>(
@@ -304,6 +345,57 @@ export function VolumeSelectModal({
     onConfirm(chosen)
   }
 
+  // ── Editar capítulos / excluir volume ──────────────────────────────────────
+
+  /** Capítulos efetivos de um volume (com edições aplicadas). */
+  function chaptersOf(volId: string): Chapter[] {
+    return allVolumes.find((v) => v.id === volId)?.chapters ?? []
+  }
+
+  function setVolChapters(volId: string, chs: Chapter[]) {
+    setEdits((prev) => ({ ...prev, [volId]: chs }))
+  }
+
+  function removeChapterFromVol(volId: string, chId: string) {
+    setVolChapters(
+      volId,
+      chaptersOf(volId).filter((c) => c.id !== chId),
+    )
+  }
+
+  function addChaptersToVol(volId: string, chs: Chapter[]) {
+    const existing = new Set(chaptersOf(volId).map((c) => c.id))
+    const merged = [
+      ...chaptersOf(volId),
+      ...chs.filter((c) => !existing.has(c.id)),
+    ].sort((a, b) => parseFloat(a.number) - parseFloat(b.number))
+    setVolChapters(volId, merged)
+  }
+
+  function deleteVol(volId: string) {
+    if (extraIds.has(volId)) {
+      setExtraVols((prev) => prev.filter((v) => v.id !== volId))
+    } else {
+      setRemovedVolIds((prev) => new Set(prev).add(volId))
+    }
+    setEdits((prev) => {
+      const next = { ...prev }
+      delete next[volId]
+      return next
+    })
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.delete(volId)
+      return next
+    })
+    if (editingVolId === volId) setEditingVolId(null)
+  }
+
+  // Volume atualmente aberto no editor de capítulos.
+  const editingVol = editingVolId
+    ? (allVolumes.find((v) => v.id === editingVolId) ?? null)
+    : null
+
   // ── Capítulos sem volume → montar em volumes ───────────────────────────────
 
   function toggleLeftover(id: string) {
@@ -345,7 +437,7 @@ export function VolumeSelectModal({
       created.forEach((v) => next.add(v.id))
       return next
     })
-    // Os capítulos consumidos saem da lista automaticamente (via consumedIds).
+    // Os capítulos consumidos saem da lista automaticamente (via assignedIds).
   }
 
   const leftoverSelCount = remainingLeftovers.filter((c) =>
@@ -353,6 +445,7 @@ export function VolumeSelectModal({
   ).length
 
   return (
+    <>
     <div
       role="dialog"
       aria-modal="true"
@@ -707,15 +800,24 @@ export function VolumeSelectModal({
                       </div>
                     </button>
 
-                    {/* Ações de capa (upload manual) */}
+                    {/* Ações: editar capítulos, excluir volume e capa */}
                     <div className="flex flex-wrap items-center gap-1.5 border-t border-neutral-800 bg-neutral-950/40 px-2.5 py-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingVolId(vol.id)}
+                        className="flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-800/60 px-2 py-1 text-[10px] text-neutral-300 transition-colors hover:bg-neutral-800"
+                        title="Editar os capítulos deste volume"
+                      >
+                        <Pencil size={11} aria-hidden="true" />
+                        Editar
+                      </button>
                       <button
                         type="button"
                         onClick={() => pickCover(vol.id)}
                         className="flex items-center gap-1 rounded-md border border-neutral-700 bg-neutral-800/60 px-2 py-1 text-[10px] text-neutral-300 transition-colors hover:bg-neutral-800"
                       >
                         <ImagePlus size={11} aria-hidden="true" />
-                        {effectiveCover(vol) ? 'Trocar capa' : 'Adicionar capa'}
+                        {effectiveCover(vol) ? 'Trocar capa' : 'Capa'}
                       </button>
                       {effectiveCover(vol) && (
                         <button
@@ -723,9 +825,18 @@ export function VolumeSelectModal({
                           onClick={() => removeCover(vol.id)}
                           className="text-[10px] text-neutral-600 transition-colors hover:text-neutral-400"
                         >
-                          Remover
+                          Remover capa
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => deleteVol(vol.id)}
+                        className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-neutral-600 transition-colors hover:bg-red-950/40 hover:text-red-400"
+                        title="Excluir este volume da montagem"
+                      >
+                        <Trash2 size={11} aria-hidden="true" />
+                        Excluir
+                      </button>
                       {coverErr && (
                         <p className="w-full text-[10px] leading-tight text-red-400">
                           {coverErr}
@@ -770,6 +881,229 @@ export function VolumeSelectModal({
             className="ml-auto rounded-xl border border-neutral-700 px-4 py-2 text-sm text-neutral-300 transition-colors hover:bg-neutral-800"
           >
             Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {/* Editor de capítulos de um volume (add/remove) */}
+    {editingVol && (
+      <VolumeChaptersEditor
+        vol={editingVol}
+        pool={poolChapters}
+        onRemoveChapter={(cid) => removeChapterFromVol(editingVol.id, cid)}
+        onAddChapters={(chs) => addChaptersToVol(editingVol.id, chs)}
+        onClose={() => setEditingVolId(null)}
+      />
+    )}
+    </>
+  )
+}
+
+// ── Editor de capítulos de um volume (dentro do popup) ───────────────────────
+
+interface VolumeChaptersEditorProps {
+  vol: Volume
+  /** Capítulos disponíveis para adicionar (não atribuídos a nenhum volume). */
+  pool: Chapter[]
+  onRemoveChapter: (chapterId: string) => void
+  onAddChapters: (chapters: Chapter[]) => void
+  onClose: () => void
+}
+
+function VolumeChaptersEditor({
+  vol,
+  pool,
+  onRemoveChapter,
+  onAddChapters,
+  onClose,
+}: VolumeChaptersEditorProps) {
+  // Seleção no pool de "adicionar".
+  const [addSel, setAddSel] = useState<Set<string>>(new Set())
+  const [poolQuery, setPoolQuery] = useState('')
+
+  // ESC fecha só este editor.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const chapters = [...vol.chapters].sort(
+    (a, b) => parseFloat(a.number) - parseFloat(b.number),
+  )
+  const q = poolQuery.trim().toLowerCase()
+  const visiblePool = q
+    ? pool.filter((c) => c.number.toLowerCase().includes(q))
+    : pool
+
+  function toggleAdd(id: string) {
+    setAddSel((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function applyAdd() {
+    const chosen = pool.filter((c) => addSel.has(c.id))
+    if (chosen.length === 0) return
+    onAddChapters(chosen)
+    setAddSel(new Set())
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Editar capítulos de ${vol.name}`}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl">
+        {/* Cabeçalho */}
+        <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <Pencil size={16} className="text-violet-400/80" aria-hidden="true" />
+            <div>
+              <h3 className="font-semibold text-neutral-100">
+                Editar {vol.name}
+              </h3>
+              <p className="text-xs text-neutral-500">
+                {vol.chapters.length}{' '}
+                {vol.chapters.length === 1 ? 'capítulo' : 'capítulos'} neste
+                volume
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar"
+            className="rounded-lg p-1.5 text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="retro-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          {/* Capítulos do volume (removíveis) */}
+          <div className="space-y-2">
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-wider text-neutral-600">
+              Capítulos do volume
+            </p>
+            {chapters.length === 0 ? (
+              <p className="text-xs italic text-neutral-700">
+                Volume vazio. Adicione capítulos abaixo.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {chapters.map((c) => (
+                  <span
+                    key={c.id}
+                    className="inline-flex items-center gap-1 rounded-md border border-neutral-700/60 bg-neutral-800 px-2 py-1 text-xs text-neutral-300"
+                  >
+                    <span className="font-medium">Cap. {c.number}</span>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveChapter(c.id)}
+                      className="ml-0.5 rounded text-neutral-600 transition-colors hover:text-red-400"
+                      aria-label={`Remover capítulo ${c.number} do volume`}
+                    >
+                      <X size={10} aria-hidden="true" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Adicionar capítulos sem volume */}
+          <div className="space-y-2 border-t border-neutral-800/60 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-mono text-[11px] font-semibold uppercase tracking-wider text-neutral-600">
+                Adicionar capítulos
+              </p>
+              <span className="text-[11px] text-neutral-600">
+                ({pool.length} disponíveis)
+              </span>
+              {pool.length > 0 && (
+                <button
+                  type="button"
+                  onClick={applyAdd}
+                  disabled={addSel.size === 0}
+                  className="ml-auto flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  Adicionar {addSel.size > 0 ? addSel.size : ''}
+                </button>
+              )}
+            </div>
+            {pool.length === 0 ? (
+              <p className="text-xs italic text-neutral-700">
+                Nenhum capítulo sem volume disponível.
+              </p>
+            ) : (
+              <>
+                <div className="relative">
+                  <Search
+                    size={13}
+                    className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-600"
+                    aria-hidden="true"
+                  />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={poolQuery}
+                    onChange={(e) => setPoolQuery(e.target.value)}
+                    placeholder="Filtrar por número…"
+                    className="w-full rounded-lg border border-neutral-800 bg-neutral-800/60 py-1.5 pl-8 pr-3 text-sm placeholder:text-neutral-700 focus:border-neutral-600 focus:outline-none"
+                    aria-label="Filtrar capítulos disponíveis"
+                  />
+                </div>
+                <div className="retro-scroll max-h-56 overflow-y-auto rounded-lg border border-neutral-700/50 bg-neutral-900/50">
+                  <div className="flex flex-wrap gap-1.5 p-2">
+                    {visiblePool.map((c) => {
+                      const checked = addSel.has(c.id)
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => toggleAdd(c.id)}
+                          aria-pressed={checked}
+                          className={`rounded-md border px-2 py-1 font-mono text-[11px] transition-colors ${
+                            checked
+                              ? 'border-violet-500/40 bg-violet-500/10 text-violet-300'
+                              : 'border-neutral-700 bg-neutral-800/60 text-neutral-500 hover:text-neutral-300'
+                          }`}
+                        >
+                          Cap. {c.number}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Rodapé */}
+        <div className="flex items-center justify-end border-t border-neutral-800 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-900 transition-colors hover:bg-white"
+          >
+            Concluir
           </button>
         </div>
       </div>
