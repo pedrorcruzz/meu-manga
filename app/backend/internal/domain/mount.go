@@ -23,6 +23,10 @@ type Mount struct {
 	ThumbURL  string        `json:"thumbUrl"`
 	UpdatedAt time.Time     `json:"updatedAt"`
 	Volumes   []MountVolume `json:"volumes"`
+	// Baseline é a montagem original que o Volume Inteligente propôs, guardada
+	// para o reset "Desfazer edições manuais" restaurar exatamente aquele estado.
+	// Vazio quando a montagem não veio do Volume Inteligente.
+	Baseline []MountVolume `json:"baseline,omitempty"`
 }
 
 // MountSummary é a visão enxuta de uma montagem para a lista (sem as capas

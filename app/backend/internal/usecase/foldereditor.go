@@ -123,6 +123,13 @@ func (e *FolderEditor) ReorderPages(path, volFolder, chapterFolder string, order
 	})
 }
 
+// DeleteChapter apaga a pasta inteira de um capítulo e devolve a árvore nova.
+func (e *FolderEditor) DeleteChapter(path, volFolder, chapterFolder string) (domain.MangaTree, error) {
+	return e.mutate(path, func(st EditStore, manga string) error {
+		return st.DeleteChapter(manga, volFolder, chapterFolder)
+	})
+}
+
 // mutate resolve a pasta, barra edição concorrente com um download da mesma obra
 // (ErrEditBusy), aplica a operação e devolve a árvore fresca.
 func (e *FolderEditor) mutate(path string, op func(st EditStore, manga string) error) (domain.MangaTree, error) {

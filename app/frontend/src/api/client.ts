@@ -156,6 +156,9 @@ export interface MountInput {
   title: string
   thumbUrl: string
   volumes: MountVolumeData[]
+  /** Montagem original do Volume Inteligente (para o reset "desfazer edições
+   *  manuais"). Ausente quando a montagem é manual. */
+  baseline?: MountVolumeData[]
 }
 
 /** Montagem salva completa (com as capas), como volta do backend. */
@@ -167,6 +170,8 @@ export interface MountDetail {
   /** Última atualização em ISO-8601. */
   updatedAt: string
   volumes: MountVolumeData[]
+  /** Montagem original do Volume Inteligente, se houver. */
+  baseline?: MountVolumeData[]
 }
 
 /** Resumo de uma montagem salva para a lista (sem as capas base64). */
@@ -273,6 +278,8 @@ export interface TreeEditorApi {
     chapter: string
     order: string[]
   }) => Promise<MangaTree>
+  /** Apaga a pasta inteira de um capítulo (não renumera os irmãos). */
+  deleteChapter: (b: { volume: string; chapter: string }) => Promise<MangaTree>
 }
 
 export interface PagesResponse {
@@ -559,6 +566,12 @@ export const api = {
       `/downloads/${encodeURIComponent(jobId)}/tree/page/reorder`,
       { method: 'POST', body: JSON.stringify(body) },
     ),
+  /** Apaga a pasta inteira de um capítulo (não renumera os irmãos). */
+  deleteChapter: (jobId: string, body: { volume: string; chapter: string }) =>
+    req<MangaTree>(
+      `/downloads/${encodeURIComponent(jobId)}/tree/chapter/delete`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
   /** Adaptador do editor para um download do histórico (endpoints /downloads/{id}/tree). */
   jobEditor: (jobId: string): TreeEditorApi => ({
     getTree: () => api.getMangaTree(jobId),
@@ -571,6 +584,7 @@ export const api = {
     removeCover: (volume, chapter) => api.removeCover(jobId, volume, chapter),
     deleteTreePage: (b) => api.deleteTreePage(jobId, b),
     reorderPages: (b) => api.reorderPages(jobId, b),
+    deleteChapter: (b) => api.deleteChapter(jobId, b),
   }),
   // ── Biblioteca "Meus Mangas" (pasta central = a mesma dos downloads) ──────────
   /** Lista o resumo de todas as obras encontradas na pasta central. */
@@ -628,6 +642,11 @@ export const api = {
       }),
     reorderPages: (b) =>
       req<MangaTree>('/folder/tree/page/reorder', {
+        method: 'POST',
+        body: JSON.stringify({ path, ...b }),
+      }),
+    deleteChapter: (b) =>
+      req<MangaTree>('/folder/tree/chapter/delete', {
         method: 'POST',
         body: JSON.stringify({ path, ...b }),
       }),

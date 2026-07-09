@@ -106,6 +106,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/add", s.addTreePage)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/delete", s.deleteTreePage)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/reorder", s.reorderPages)
+	s.mux.HandleFunc("POST /api/downloads/{id}/tree/chapter/delete", s.deleteChapter)
 	// Editor "Consertar da pasta" — mesma edição folder-first sobre uma pasta de
 	// mangá escolhida em qualquer lugar do disco (endereçada por ?path=/body.path).
 	s.mux.HandleFunc("POST /api/folder/pick", s.pickMangaFolder)
@@ -119,6 +120,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/folder/tree/page/add", s.folderAddPage)
 	s.mux.HandleFunc("POST /api/folder/tree/page/delete", s.folderDeletePage)
 	s.mux.HandleFunc("POST /api/folder/tree/page/reorder", s.folderReorderPages)
+	s.mux.HandleFunc("POST /api/folder/tree/chapter/delete", s.folderDeleteChapter)
 	// Montagens salvas — persistência dos volumes montados na tela da obra.
 	s.mux.HandleFunc("GET /api/mounts", s.listMounts)
 	s.mux.HandleFunc("DELETE /api/mounts", s.clearMounts)
@@ -340,6 +342,26 @@ func (s *Server) reorderPages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tree)
 }
 
+type chapterOpReq struct {
+	Volume  string `json:"volume"`  // subpasta do volume ("" = capítulo solto)
+	Chapter string `json:"chapter"` // nome da pasta, ex.: "Cap 5"
+}
+
+// deleteChapter apaga a pasta inteira de um capítulo (não renumera os irmãos).
+func (s *Server) deleteChapter(w http.ResponseWriter, r *http.Request) {
+	var req chapterOpReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chapter == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.Editor.DeleteChapter(r.PathValue("id"), req.Volume, req.Chapter)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
 // deleteCover remove a 1ª página do alvo (?vol=&chap=). Sem chap = capa do
 // volume (1º capítulo); com chap = 1ª página só daquele capítulo.
 func (s *Server) deleteCover(w http.ResponseWriter, r *http.Request) {
@@ -535,6 +557,26 @@ func (s *Server) folderReorderPages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tree)
 }
 
+type folderChapterOpReq struct {
+	Path    string `json:"path"`
+	Volume  string `json:"volume"`
+	Chapter string `json:"chapter"`
+}
+
+func (s *Server) folderDeleteChapter(w http.ResponseWriter, r *http.Request) {
+	var req folderChapterOpReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Chapter == "" {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.FolderEditor.DeleteChapter(req.Path, req.Volume, req.Chapter)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
 // ── Montagens salvas (persistência dos volumes montados) ─────────────────────────
 
 // listMounts devolve o resumo de todas as montagens salvas (sem as capas).
@@ -565,6 +607,9 @@ type saveMountReq struct {
 	Title    string               `json:"title"`
 	ThumbURL string               `json:"thumbUrl"`
 	Volumes  []domain.MountVolume `json:"volumes"`
+	// Baseline é o que o Volume Inteligente montou (para o reset "desfazer
+	// edições manuais"). Vazio quando a montagem é manual.
+	Baseline []domain.MountVolume `json:"baseline,omitempty"`
 }
 
 // saveMount grava (ou substitui) a montagem de uma obra.
@@ -581,6 +626,7 @@ func (s *Server) saveMount(w http.ResponseWriter, r *http.Request) {
 		ThumbURL:  req.ThumbURL,
 		UpdatedAt: time.Now(),
 		Volumes:   req.Volumes,
+		Baseline:  req.Baseline,
 	}
 	if err := s.deps.Mounts.SaveMount(m); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

@@ -429,6 +429,26 @@ func (s *Store) MoveChapter(manga, fromVol, toVol, chapterFolder string) error {
 	return nil
 }
 
+// DeleteChapter apaga a pasta inteira de um capítulo. Os demais capítulos do
+// volume mantêm seus números (não há renumeração). Remove o volume se ficar
+// vazio. Rejeita segmentos inseguros (path traversal).
+func (s *Store) DeleteChapter(manga, volFolder, chapterFolder string) error {
+	if !safeSeg(chapterFolder) {
+		return os.ErrNotExist
+	}
+	if volFolder != "" && !safeSeg(volFolder) {
+		return os.ErrNotExist
+	}
+	parent := s.subdir(manga, volFolder)
+	if err := os.RemoveAll(filepath.Join(parent, chapterFolder)); err != nil {
+		return err
+	}
+	if volFolder != "" {
+		removeIfEmpty(parent)
+	}
+	return nil
+}
+
 // RenameChapter corrige o número de um capítulo renomeando a pasta "Cap old"
 // para "Cap new" no mesmo volume. Colisão com um número existente → ErrChapterExists.
 func (s *Store) RenameChapter(manga, volFolder, oldNumber, newNumber string) error {

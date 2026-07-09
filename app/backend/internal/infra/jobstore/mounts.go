@@ -39,15 +39,21 @@ func (s *Store) SaveMount(m domain.Mount) error {
 	if err != nil {
 		return err
 	}
+	baseline, err := json.Marshal(m.Baseline)
+	if err != nil {
+		return err
+	}
 	_, err = s.db.Exec(
-		`INSERT INTO mounts (source, slug, title, thumb_url, updated_at, data)
-		 VALUES (?, ?, ?, ?, ?, ?)
+		`INSERT INTO mounts (source, slug, title, thumb_url, updated_at, data, baseline)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(source, slug) DO UPDATE SET
 		   title = excluded.title,
 		   thumb_url = excluded.thumb_url,
 		   updated_at = excluded.updated_at,
-		   data = excluded.data`,
-		m.Source, m.Slug, m.Title, m.ThumbURL, m.UpdatedAt.UnixNano(), string(data),
+		   data = excluded.data,
+		   baseline = excluded.baseline`,
+		m.Source, m.Slug, m.Title, m.ThumbURL, m.UpdatedAt.UnixNano(),
+		string(data), string(baseline),
 	)
 	return err
 }
@@ -78,14 +84,15 @@ func (s *Store) LoadMount(source, slug string) (domain.Mount, bool, error) {
 	defer s.mu.Unlock()
 
 	var (
-		m    domain.Mount
-		nano int64
-		data string
+		m        domain.Mount
+		nano     int64
+		data     string
+		baseline string
 	)
 	err := s.db.QueryRow(
-		`SELECT source, slug, title, thumb_url, updated_at, data
+		`SELECT source, slug, title, thumb_url, updated_at, data, baseline
 		 FROM mounts WHERE source = ? AND slug = ?`, source, slug,
-	).Scan(&m.Source, &m.Slug, &m.Title, &m.ThumbURL, &nano, &data)
+	).Scan(&m.Source, &m.Slug, &m.Title, &m.ThumbURL, &nano, &data, &baseline)
 	if err == sql.ErrNoRows {
 		return domain.Mount{}, false, nil
 	}
@@ -95,6 +102,13 @@ func (s *Store) LoadMount(source, slug string) (domain.Mount, bool, error) {
 	m.UpdatedAt = timeFromNano(nano)
 	if err := json.Unmarshal([]byte(data), &m.Volumes); err != nil {
 		return domain.Mount{}, false, err
+	}
+	// Baseline pode estar vazio (bancos antigos ou montagem manual) — nesse caso
+	// fica nil e o reset "Desfazer edições manuais" não é oferecido.
+	if baseline != "" {
+		if err := json.Unmarshal([]byte(baseline), &m.Baseline); err != nil {
+			return domain.Mount{}, false, err
+		}
 	}
 	return m, true, nil
 }

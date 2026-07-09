@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,6 +60,15 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(mountsSchema); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("mounts schema: %w", err)
+	}
+	// Migração idempotente: coluna do baseline do Volume Inteligente. Bancos
+	// antigos não têm a coluna; ADD COLUMN erra com "duplicate column" quando já
+	// existe — ignoramos esse caso.
+	if _, err := db.Exec(
+		`ALTER TABLE mounts ADD COLUMN baseline TEXT NOT NULL DEFAULT ''`,
+	); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		_ = db.Close()
+		return nil, fmt.Errorf("mounts baseline column: %w", err)
 	}
 	return &Store{db: db}, nil
 }

@@ -15,6 +15,7 @@ type EditStore interface {
 	RemoveCover(manga, volFolder, chapterFolder string) error
 	DeleteTreePage(manga, volFolder, chapterFolder, name string) error
 	ReorderPages(manga, volFolder, chapterFolder string, order []string) error
+	DeleteChapter(manga, volFolder, chapterFolder string) error
 }
 
 // JobLister expõe os jobs para resolver o título da obra a partir do id e barrar
@@ -136,6 +137,19 @@ func (e *MangaEditor) ReorderPages(jobID, volFolder, chapterFolder string, order
 		return domain.MangaTree{}, err
 	}
 	if err := e.store.ReorderPages(title, volFolder, chapterFolder, order); err != nil {
+		return domain.MangaTree{}, err
+	}
+	return e.store.ScanManga(title)
+}
+
+// DeleteChapter apaga a pasta inteira de um capítulo e devolve a árvore nova.
+// Os demais capítulos do volume mantêm seus números (não há renumeração).
+func (e *MangaEditor) DeleteChapter(jobID, volFolder, chapterFolder string) (domain.MangaTree, error) {
+	title, err := e.guard(jobID)
+	if err != nil {
+		return domain.MangaTree{}, err
+	}
+	if err := e.store.DeleteChapter(title, volFolder, chapterFolder); err != nil {
 		return domain.MangaTree{}, err
 	}
 	return e.store.ScanManga(title)
