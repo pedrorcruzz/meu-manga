@@ -253,7 +253,11 @@ function MeusMangasPage() {
               </Link>
             </div>
           ) : mangas ? (
-            <LibraryGrid mangas={mangas} onFix={(m) => setEditing(m)} />
+            <LibraryGrid
+              mangas={mangas}
+              onFix={(m) => setEditing(m)}
+              rev={rev}
+            />
           ) : null}
         </>
       )}
@@ -263,6 +267,7 @@ function MeusMangasPage() {
         <VolumeEditor
           editor={editor}
           title={editing.manga}
+          onChanged={() => setRev((r) => r + 1)}
           onClose={() => {
             setEditing(null)
             setRev((r) => r + 1)
@@ -278,9 +283,12 @@ function MeusMangasPage() {
 function LibraryGrid({
   mangas,
   onFix,
+  rev,
 }: {
   mangas: LibraryManga[]
   onFix: (m: LibraryManga) => void
+  /** Versão para furar o cache das capas após uma edição. */
+  rev: number
 }) {
   const [query, setQuery] = useState('')
   const filtered = useMemo(() => {
@@ -342,7 +350,12 @@ function LibraryGrid({
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {visible.map((m) => (
-            <MangaTile key={m.path} manga={m} onFix={() => onFix(m)} />
+            <MangaTile
+              key={m.path}
+              manga={m}
+              onFix={() => onFix(m)}
+              rev={rev}
+            />
           ))}
         </div>
       )}
@@ -363,9 +376,11 @@ function LibraryGrid({
 function MangaTile({
   manga,
   onFix,
+  rev,
 }: {
   manga: LibraryManga
   onFix: () => void
+  rev: number
 }) {
   const cover = manga.cover
     ? api.folderPageUrl(
@@ -373,6 +388,7 @@ function MangaTile({
         manga.cover.volume,
         manga.cover.chapter,
         manga.cover.name,
+        rev,
       )
     : null
 

@@ -90,6 +90,9 @@ type VolumeDlStatus = 'idle' | 'downloading' | 'done' | 'failed'
 function diskCoversFromTree(
   tree: MangaTree | null,
   jobId: string,
+  // Versão para furar o cache do <img>: quando muda (ex.: após trocar a capa ou
+  // baixar), a URL muda e o navegador rebusca — sem precisar de F5.
+  rev?: number,
 ): Record<number, string> {
   const m: Record<number, string> = {}
   if (!tree || !jobId) return m
@@ -98,7 +101,13 @@ function diskCoversFromTree(
     if (num == null) continue
     const chap = vol.chapters.find((c) => c.firstPage)
     if (!chap) continue
-    m[num] = api.mangaPageUrl(jobId, vol.folder, chap.folder, chap.firstPage)
+    m[num] = api.mangaPageUrl(
+      jobId,
+      vol.folder,
+      chap.folder,
+      chap.firstPage,
+      rev,
+    )
   }
   return m
 }
@@ -215,8 +224,8 @@ function DownloadsPage() {
 
   // Número do volume → capa real no disco (baixados de qualquer sessão).
   const diskCovers = useMemo(
-    () => diskCoversFromTree(pendingTree, pendingJob?.jobId ?? ''),
-    [pendingTree, pendingJob?.jobId],
+    () => diskCoversFromTree(pendingTree, pendingJob?.jobId ?? '', listTick),
+    [pendingTree, pendingJob?.jobId, listTick],
   )
 
   // Adaptador do editor (só-leitura) para o preview de um volume já baixado.
@@ -1826,8 +1835,8 @@ function JobCard({
   )
   const jobCover = useMemo(() => {
     if (volNums.length === 0) return null
-    return diskCoversFromTree(jobTree, job.jobId)[volNums[0]] ?? null
-  }, [jobTree, job.jobId, volNums])
+    return diskCoversFromTree(jobTree, job.jobId, listTick)[volNums[0]] ?? null
+  }, [jobTree, job.jobId, volNums, listTick])
 
   const pct =
     job.totalChapters > 0
@@ -2167,6 +2176,8 @@ function JobCard({
               // Aberto pela tela de downloads: foca só o volume deste card
               // (com opção de ver todos). Vários volumes = abre com todos.
               focusVolume={volNums.length === 1 ? volNums[0] : undefined}
+              // Reflete na hora cada edição (troca de capa, exclusão) na lista.
+              onChanged={onRefresh}
               onClose={() => {
                 setShowEditor(false)
                 // Reflete na hora o que foi mexido na pasta (capas, exclusões):
