@@ -22,6 +22,7 @@ import { VolumeCard, type Volume } from './VolumeCard'
 import { VolumeSelectModal } from './VolumeSelectModal'
 import { ConfirmDialog } from './ConfirmDialog'
 import { FilterChip } from './FilterChip'
+import { Dropdown } from './Dropdown'
 import { HelpButton } from './HelpButton'
 import { useIncremental } from '~/hooks/useIncremental'
 import {
@@ -30,9 +31,7 @@ import {
   formatVolumeName,
   reformatVolumeName,
   volumeNameExample,
-  type VolumeDigits,
   type VolumeNameFormat,
-  type VolumePrefix,
 } from '~/lib/volumeName'
 import {
   loadVolumeFormat,
@@ -685,43 +684,21 @@ export function VolumeBuilder({
           </div>
           <label className="flex items-center gap-1.5 text-xs text-neutral-400">
             Prefixo
-            <select
+            <Dropdown
               value={nameFormat.prefix}
-              onChange={(e) =>
-                changeNameFormat({
-                  ...nameFormat,
-                  prefix: e.target.value as VolumePrefix,
-                })
-              }
-              className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-neutral-500 focus:outline-none"
-              aria-label="Prefixo do nome do volume"
-            >
-              {PREFIX_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              options={PREFIX_OPTIONS}
+              onChange={(prefix) => changeNameFormat({ ...nameFormat, prefix })}
+              ariaLabel="Prefixo do nome do volume"
+            />
           </label>
           <label className="flex items-center gap-1.5 text-xs text-neutral-400">
             Números
-            <select
+            <Dropdown
               value={nameFormat.digits}
-              onChange={(e) =>
-                changeNameFormat({
-                  ...nameFormat,
-                  digits: Number(e.target.value) as VolumeDigits,
-                })
-              }
-              className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-neutral-500 focus:outline-none"
-              aria-label="Forma dos números do volume"
-            >
-              {DIGITS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              options={DIGITS_OPTIONS}
+              onChange={(digits) => changeNameFormat({ ...nameFormat, digits })}
+              ariaLabel="Forma dos números do volume"
+            />
           </label>
           <span className="ml-auto flex items-center gap-1.5 font-mono text-xs text-neutral-500">
             exemplo:
@@ -1051,18 +1028,19 @@ export function VolumeBuilder({
           {volumes.length > 0 && (
             <div className="space-y-1.5 border-t border-neutral-800 p-3">
               <div className="flex items-center gap-2">
-                <select
-                  value={effectiveTargetVolId}
-                  onChange={(e) => setTargetVolId(e.target.value)}
-                  className="min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-sm text-neutral-300 focus:border-neutral-500 focus:outline-none"
-                  aria-label="Volume de destino"
-                >
-                  {volumes.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="min-w-0 flex-1">
+                  <Dropdown
+                    value={effectiveTargetVolId}
+                    options={volumes.map((v) => ({
+                      value: v.id,
+                      label: v.name,
+                    }))}
+                    onChange={(id) => setTargetVolId(id)}
+                    ariaLabel="Volume de destino"
+                    fullWidth
+                    triggerClassName="flex w-full items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500 focus:border-neutral-500 focus:outline-none"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={addSelectedToVolume}

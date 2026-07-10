@@ -45,6 +45,7 @@ import { useDownloadEvents } from '~/api/events'
 import { ConfirmDialog } from '~/components/ConfirmDialog'
 import { PageGallery } from '~/components/PageGallery'
 import { SortMenu } from '~/components/SortMenu'
+import { Dropdown } from '~/components/Dropdown'
 import { VolumeEditor } from '~/components/VolumeEditor'
 import { useSessionContext } from '~/context/session'
 import { useAsync } from '~/hooks/useAsync'
@@ -65,9 +66,7 @@ import {
   reformatVolumeName,
   volumeNameExample,
   volumeNumber,
-  type VolumeDigits,
   type VolumeNameFormat,
-  type VolumePrefix,
 } from '~/lib/volumeName'
 
 /** Opções de retry: sem nada = tudo que falta; volume/capítulo restringe.
@@ -701,43 +700,23 @@ function PendingVolumesPanel({
         </span>
         <label className="flex items-center gap-1.5 text-xs text-neutral-400">
           Prefixo
-          <select
+          <Dropdown
             value={nameFormat.prefix}
-            onChange={(e) =>
-              onChangeFormat({
-                ...nameFormat,
-                prefix: e.target.value as VolumePrefix,
-              })
-            }
-            className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-neutral-500 focus:outline-none"
-            aria-label="Prefixo do nome do volume"
-          >
-            {PREFIX_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+            options={PREFIX_OPTIONS}
+            onChange={(prefix) => onChangeFormat({ ...nameFormat, prefix })}
+            ariaLabel="Prefixo do nome do volume"
+            triggerClassName="flex items-center gap-1.5 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-200 transition-colors hover:border-neutral-500 focus:border-neutral-500 focus:outline-none"
+          />
         </label>
         <label className="flex items-center gap-1.5 text-xs text-neutral-400">
           Números
-          <select
+          <Dropdown
             value={nameFormat.digits}
-            onChange={(e) =>
-              onChangeFormat({
-                ...nameFormat,
-                digits: Number(e.target.value) as VolumeDigits,
-              })
-            }
-            className="rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-neutral-500 focus:outline-none"
-            aria-label="Forma dos números do volume"
-          >
-            {DIGITS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+            options={DIGITS_OPTIONS}
+            onChange={(digits) => onChangeFormat({ ...nameFormat, digits })}
+            ariaLabel="Forma dos números do volume"
+            triggerClassName="flex items-center gap-1.5 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-200 transition-colors hover:border-neutral-500 focus:border-neutral-500 focus:outline-none"
+          />
         </label>
         <span className="ml-auto flex items-center gap-1.5 font-mono text-xs text-neutral-500">
           ex.:
