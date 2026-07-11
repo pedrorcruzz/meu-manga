@@ -20,11 +20,11 @@
 
 |  |  |
 |:--:|:--:|
-| ![Home](docs/screenshots/home.png) | ![Buscar](docs/screenshots/busca.png) |
-| ![Montar volumes](docs/screenshots/volumes.png) | ![Downloads](docs/screenshots/downloads.png) |
+| ![Home](docs/screenshots/home.png) | ![Meus Mangás](docs/screenshots/biblioteca.png) |
+| ![Ver & Editar volumes](docs/screenshots/ver-editar.png) | ![Downloads](docs/screenshots/downloads.png) |
 
 <p align="center">
-  <img src="docs/screenshots/preview.png" alt="Preview das páginas de um capítulo baixado" width="900" />
+  <img src="docs/screenshots/capa-formato.png" alt="Seletor de formato da capa — presets de Kindle (busca por modelo) e tamanho personalizado, com resize de alta qualidade" width="760" />
 </p>
 
 <br>
@@ -34,6 +34,27 @@
 **Meu Mangá** é um app web local (roda na sua máquina) para baixar mangás de forma
 organizada. Você busca a obra, vê os capítulos, monta volumes (inclusive com capa) e
 baixa tudo em JPGs numerados, prontos pro seu leitor ou pro Kindle.
+
+### Recursos
+
+- **Buscar e baixar** por conectores (um site = um conector), em JPGs numerados
+  prontos pro leitor.
+- **Montar volumes** do jeito que quiser: agrupar capítulos, definir capa e o formato
+  do nome dos volumes.
+- **Ver & Editar volumes** direto na pasta em disco, sem re-baixar: mover capítulos
+  entre volumes, corrigir números, reordenar/apagar páginas e mexer nas capas — as
+  páginas se renumeram sozinhas.
+- **Capa por formato**: ao adicionar/trocar a capa, dá pra redimensionar para a
+  resolução exata do seu **Kindle** (busca por modelo — todos os aparelhos) ou um
+  **tamanho personalizado**. O resize é de **alta qualidade** e serve pra qualquer
+  aparelho, não só Kindle.
+- **Editar capa em massa**: aplica um formato à capa (1ª página do 1º capítulo) de
+  **todos os volumes** de uma vez.
+- **Histórico do formato + voltar ao original**: o app guarda a capa original e o
+  formato aplicado, então você vê que a capa foi alterada, qual formato foi usado, e
+  pode **reverter** quando quiser.
+- **Biblioteca "Meus Mangás"** e **histórico de downloads** com re-download por
+  capítulo.
 
 ### Requisitos
 
