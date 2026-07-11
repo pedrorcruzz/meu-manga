@@ -495,6 +495,27 @@ func (s *Store) coverChapterDir(manga, volFolder, chapterFolder string) (string,
 	return filepath.Join(parent, chFolder), nil
 }
 
+// CoverDir devolve o caminho ABSOLUTO da pasta do capítulo-alvo (ver
+// coverChapterDir) — usado como chave estável ao arquivar/reverter a capa.
+func (s *Store) CoverDir(manga, volFolder, chapterFolder string) (string, error) {
+	return s.coverChapterDir(manga, volFolder, chapterFolder)
+}
+
+// ReadCover devolve os bytes da capa atual (1ª imagem) do capítulo-alvo, sem
+// mexer em nada. Sem páginas → ErrNoCover. Serve para arquivar o original antes
+// de uma edição sobrescrever a capa.
+func (s *Store) ReadCover(manga, volFolder, chapterFolder string) ([]byte, error) {
+	dir, err := s.coverChapterDir(manga, volFolder, chapterFolder)
+	if err != nil {
+		return nil, err
+	}
+	names := imagesIn(dir)
+	if len(names) == 0 {
+		return nil, domain.ErrNoCover
+	}
+	return os.ReadFile(filepath.Join(dir, names[0]))
+}
+
 // SetCover grava a 001.jpg do capítulo-alvo (ver coverChapterDir): sem
 // chapterFolder é a capa do volume (1º capítulo); com ele é a 1ª página daquele
 // capítulo. insert=true empurra as páginas em +1 (adicionar); insert=false

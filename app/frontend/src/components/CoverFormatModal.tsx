@@ -5,14 +5,21 @@
 // desabilitado nesse caso.
 
 import { useState, type ReactNode } from 'react'
-import { Loader2, Wand2, X } from 'lucide-react'
+import { Loader2, RotateCcw, Wand2, X } from 'lucide-react'
 import { CoverFormatPicker } from '~/components/CoverFormatPicker'
-import { ORIGINAL_FORMAT, formatDims, type CoverFormat } from '~/lib/kindleFormats'
+import {
+  ORIGINAL_FORMAT,
+  formatDims,
+  formatMeta,
+  type CoverFormat,
+} from '~/lib/kindleFormats'
 
 export function CoverFormatModal({
   title = 'Editar capa de todos os volumes',
   description,
   previewUrl,
+  currentLabel,
+  onRevert,
   busy,
   onApply,
   onClose,
@@ -23,8 +30,17 @@ export function CoverFormatModal({
   description: ReactNode
   /** Capa atual a exibir como prévia (mesma URL usada em downloads/Meus Mangás). */
   previewUrl?: string
+  /** Rótulo do formato já aplicado nesta capa (mostra que foi alterada). */
+  currentLabel?: string
+  /** Se presente, mostra "Voltar ao original" (há um original guardado). */
+  onRevert?: () => void
   busy?: boolean
-  onApply: (b: { width: number; height: number }) => void
+  onApply: (b: {
+    width: number
+    height: number
+    formatKind: string
+    formatLabel: string
+  }) => void
   onClose: () => void
 }) {
   const [format, setFormat] = useState<CoverFormat>(ORIGINAL_FORMAT)
@@ -67,6 +83,26 @@ export function CoverFormatModal({
             </div>
           )}
           <p className="text-xs leading-snug text-neutral-500">{description}</p>
+          {currentLabel && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2">
+              <span className="text-xs text-neutral-400">
+                Formato atual:{' '}
+                <span className="font-medium text-neutral-200">{currentLabel}</span>
+              </span>
+              {onRevert && (
+                <button
+                  type="button"
+                  onClick={onRevert}
+                  disabled={busy}
+                  className="ml-auto flex items-center gap-1.5 rounded-md border border-neutral-700 px-2 py-1 text-[11px] text-neutral-300 transition-colors hover:border-neutral-500 hover:text-neutral-100 disabled:opacity-40"
+                  title="Restaura a capa original que veio, desfazendo a edição"
+                >
+                  <RotateCcw size={11} aria-hidden="true" />
+                  Voltar ao original
+                </button>
+              )}
+            </div>
+          )}
           <CoverFormatPicker value={format} onChange={setFormat} />
         </div>
 
@@ -81,7 +117,11 @@ export function CoverFormatModal({
           </button>
           <button
             type="button"
-            onClick={() => dims && onApply(dims)}
+            onClick={() => {
+              if (!dims) return
+              const meta = formatMeta(format)
+              onApply({ ...dims, formatKind: meta.kind, formatLabel: meta.label })
+            }}
             disabled={!dims || !!busy}
             className="flex items-center gap-2 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
           >

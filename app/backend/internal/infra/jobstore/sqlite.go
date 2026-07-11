@@ -70,6 +70,10 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("mounts baseline column: %w", err)
 	}
+	if _, err := db.Exec(coverEditsSchema); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("cover edits schema: %w", err)
+	}
 	return &Store{db: db}, nil
 }
 

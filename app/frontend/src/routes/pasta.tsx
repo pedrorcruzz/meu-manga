@@ -436,7 +436,7 @@ function MangaTile({
         className="flex items-center justify-center gap-1.5 border-t border-neutral-800 bg-neutral-800/40 px-2.5 py-1.5 text-xs font-medium text-neutral-200 transition-colors hover:bg-neutral-800"
       >
         <Wrench size={12} aria-hidden="true" />
-        Consertar
+        Ver & Editar
       </button>
     </div>
   )

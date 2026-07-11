@@ -5,7 +5,12 @@
 import { useState } from 'react'
 import { ImagePlus, Loader2, X } from 'lucide-react'
 import { CoverFormatPicker } from '~/components/CoverFormatPicker'
-import { ORIGINAL_FORMAT, formatDims, type CoverFormat } from '~/lib/kindleFormats'
+import {
+  ORIGINAL_FORMAT,
+  formatDims,
+  formatMeta,
+  type CoverFormat,
+} from '~/lib/kindleFormats'
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -37,7 +42,13 @@ export function CoverUploadModal({
   title: string
   confirmLabel: string
   busy?: boolean
-  onConfirm: (b: { image: string; width: number; height: number }) => void
+  onConfirm: (b: {
+    image: string
+    width: number
+    height: number
+    formatKind: string
+    formatLabel: string
+  }) => void
   onClose: () => void
 }) {
   const [image, setImage] = useState<string | null>(null)
@@ -72,7 +83,14 @@ export function CoverUploadModal({
 
   function confirm() {
     if (!image || customIncomplete) return
-    onConfirm({ image, width: dims?.width ?? 0, height: dims?.height ?? 0 })
+    const meta = formatMeta(format)
+    onConfirm({
+      image,
+      width: dims?.width ?? 0,
+      height: dims?.height ?? 0,
+      formatKind: meta.kind,
+      formatLabel: meta.label,
+    })
   }
 
   return (

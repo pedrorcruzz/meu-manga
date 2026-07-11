@@ -2144,7 +2144,7 @@ function JobCard({
                 title="Reorganizar os volumes na pasta em disco (mover capítulos, capa, corrigir número) sem re-baixar"
               >
                 <Wrench size={11} aria-hidden="true" />
-                Consertar volumes
+                Ver & Editar
               </button>
             )}
           </div>

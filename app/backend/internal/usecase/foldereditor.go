@@ -22,13 +22,40 @@ type FolderEditor struct {
 	// storeFor constrói um EditStore enraizado em `root` (a pasta-pai do mangá).
 	storeFor func(root string) EditStore
 	jobs     JobLister
+	covers   CoverArchive
 }
 
 // NewFolderEditor liga o editor de pasta a uma fábrica de store (por caminho
-// raiz) e ao registro de jobs (para barrar edição durante um download da mesma
-// obra).
-func NewFolderEditor(storeFor func(root string) EditStore, jobs JobLister) *FolderEditor {
-	return &FolderEditor{storeFor: storeFor, jobs: jobs}
+// raiz), ao registro de jobs (para barrar edição durante um download da mesma
+// obra) e ao arquivo de capas (original + formato). covers pode ser nil.
+func NewFolderEditor(storeFor func(root string) EditStore, jobs JobLister, covers CoverArchive) *FolderEditor {
+	return &FolderEditor{storeFor: storeFor, jobs: jobs, covers: covers}
+}
+
+// scan lê a árvore e anexa o formato de capa persistido de cada capítulo.
+func (e *FolderEditor) scan(st EditStore, manga string) (domain.MangaTree, error) {
+	t, err := st.ScanManga(manga)
+	if err != nil {
+		return t, err
+	}
+	enrichCovers(e.covers, &t)
+	return t, nil
+}
+
+// archive guarda (na 1ª edição) a capa original e registra o formato aplicado.
+func (e *FolderEditor) archive(st EditStore, manga, vol, chap string, inserted bool, kind, label string, w, h int) {
+	if e.covers == nil {
+		return
+	}
+	path, err := st.CoverDir(manga, vol, chap)
+	if err != nil {
+		return
+	}
+	var orig []byte
+	if !inserted {
+		orig, _ = st.ReadCover(manga, vol, chap)
+	}
+	_ = e.covers.SaveCoverEdit(path, orig, inserted, kind, label, w, h)
 }
 
 // resolve valida a pasta escolhida e devolve (store enraizado no pai, nome-base).
@@ -60,7 +87,7 @@ func (e *FolderEditor) Tree(path string) (domain.MangaTree, error) {
 	if err != nil {
 		return domain.MangaTree{}, err
 	}
-	return st.ScanManga(manga)
+	return e.scan(st, manga)
 }
 
 // Page lê os bytes de uma página endereçada por nomes de pasta (read-only).
@@ -88,26 +115,82 @@ func (e *FolderEditor) Rename(path, volFolder, oldNumber, newNumber string) (dom
 
 // SetCover adiciona (insert) ou troca (replace) a 001.jpg do alvo. chapterFolder
 // vazio = capa do volume (1º capítulo); preenchido = 1ª página só daquele capítulo.
-func (e *FolderEditor) SetCover(path, volFolder, chapterFolder string, jpeg []byte, insert bool) (domain.MangaTree, error) {
-	return e.mutate(path, func(st EditStore, manga string) error {
-		return st.SetCover(manga, volFolder, chapterFolder, jpeg, insert)
-	})
+func (e *FolderEditor) SetCover(path, volFolder, chapterFolder string, jpeg []byte, insert bool, kind, label string, w, h int) (domain.MangaTree, error) {
+	st, manga, err := e.resolve(path)
+	if err != nil {
+		return domain.MangaTree{}, err
+	}
+	if e.busy(manga) {
+		return domain.MangaTree{}, domain.ErrEditBusy
+	}
+	e.archive(st, manga, volFolder, chapterFolder, insert, kind, label, w, h)
+	if err := st.SetCover(manga, volFolder, chapterFolder, jpeg, insert); err != nil {
+		return domain.MangaTree{}, err
+	}
+	return e.scan(st, manga)
 }
 
 // FormatCover redimensiona a capa (1ª pág.) de UM capítulo-alvo da pasta
 // escolhida para width×height e devolve a árvore atualizada.
-func (e *FolderEditor) FormatCover(path, volFolder, chapterFolder string, width, height int) (domain.MangaTree, error) {
-	return e.mutate(path, func(st EditStore, manga string) error {
-		return st.FormatCover(manga, volFolder, chapterFolder, width, height)
-	})
+func (e *FolderEditor) FormatCover(path, volFolder, chapterFolder, kind, label string, width, height int) (domain.MangaTree, error) {
+	st, manga, err := e.resolve(path)
+	if err != nil {
+		return domain.MangaTree{}, err
+	}
+	if e.busy(manga) {
+		return domain.MangaTree{}, domain.ErrEditBusy
+	}
+	e.archive(st, manga, volFolder, chapterFolder, false, kind, label, width, height)
+	if err := st.FormatCover(manga, volFolder, chapterFolder, width, height); err != nil {
+		return domain.MangaTree{}, err
+	}
+	return e.scan(st, manga)
 }
 
 // FormatCovers redimensiona a capa (1ª pág. do 1º cap.) de TODOS os volumes da
 // pasta escolhida para width×height e devolve a árvore atualizada.
-func (e *FolderEditor) FormatCovers(path string, width, height int) (domain.MangaTree, error) {
-	return e.mutate(path, func(st EditStore, manga string) error {
-		return st.FormatCovers(manga, width, height)
-	})
+func (e *FolderEditor) FormatCovers(path, kind, label string, width, height int) (domain.MangaTree, error) {
+	st, manga, err := e.resolve(path)
+	if err != nil {
+		return domain.MangaTree{}, err
+	}
+	if e.busy(manga) {
+		return domain.MangaTree{}, domain.ErrEditBusy
+	}
+	if t, serr := st.ScanManga(manga); serr == nil {
+		for _, vol := range t.Volumes {
+			e.archive(st, manga, vol.Folder, "", false, kind, label, width, height)
+		}
+	}
+	if err := st.FormatCovers(manga, width, height); err != nil {
+		return domain.MangaTree{}, err
+	}
+	return e.scan(st, manga)
+}
+
+// RevertCover volta a capa de um capítulo ao original guardado (remove a capa se
+// a 1ª edição a tinha adicionado; senão restaura os bytes originais).
+func (e *FolderEditor) RevertCover(path, volFolder, chapterFolder string) (domain.MangaTree, error) {
+	st, manga, err := e.resolve(path)
+	if err != nil {
+		return domain.MangaTree{}, err
+	}
+	if e.busy(manga) {
+		return domain.MangaTree{}, domain.ErrEditBusy
+	}
+	if e.covers != nil {
+		if p, derr := st.CoverDir(manga, volFolder, chapterFolder); derr == nil {
+			if orig, inserted, ok, _ := e.covers.CoverOriginal(p); ok {
+				if inserted {
+					_ = st.RemoveCover(manga, volFolder, chapterFolder)
+				} else if len(orig) > 0 {
+					_ = st.SetCover(manga, volFolder, chapterFolder, orig, false)
+				}
+				_ = e.covers.DeleteCoverEdit(p)
+			}
+		}
+	}
+	return e.scan(st, manga)
 }
 
 // AddPage acrescenta uma página ao final de um capítulo e devolve a árvore nova.
@@ -159,7 +242,7 @@ func (e *FolderEditor) mutate(path string, op func(st EditStore, manga string) e
 	if err := op(st, manga); err != nil {
 		return domain.MangaTree{}, err
 	}
-	return st.ScanManga(manga)
+	return e.scan(st, manga)
 }
 
 // busy reporta se há um download da obra de mesmo nome rodando/na fila — proteção

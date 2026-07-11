@@ -262,12 +262,20 @@ export interface TreeEditorApi {
     /** Redimensiona para width×height; ausente/0 = mantém o tamanho original. */
     width?: number
     height?: number
+    /** Formato aplicado (persistido para o usuário ver depois). */
+    formatKind?: string
+    formatLabel?: string
   }) => Promise<MangaTree>
   /**
    * Redimensiona a capa (1ª pág. do 1º cap.) de TODOS os volumes para width×height
    * de uma vez. Devolve a árvore atualizada.
    */
-  formatAllCovers: (b: { width: number; height: number }) => Promise<MangaTree>
+  formatAllCovers: (b: {
+    width: number
+    height: number
+    formatKind?: string
+    formatLabel?: string
+  }) => Promise<MangaTree>
   /**
    * Redimensiona a capa (1ª pág.) já existente de UM capítulo para width×height —
    * útil quando o mangá já veio com capa. Devolve a árvore atualizada.
@@ -277,7 +285,11 @@ export interface TreeEditorApi {
     chapter: string
     width: number
     height: number
+    formatKind?: string
+    formatLabel?: string
   }) => Promise<MangaTree>
+  /** Volta a capa de um capítulo ao original guardado (desfaz a edição). */
+  revertCover: (b: { volume: string; chapter: string }) => Promise<MangaTree>
   /** Acrescenta uma imagem como nova última página de um capítulo. `image` é um data URL. */
   addPage: (b: {
     volume: string
@@ -304,7 +316,16 @@ export interface PagesResponse {
   pages: string[]
 }
 
-/** Capítulo lido da pasta em disco (editor "Consertar volumes"). */
+/** Edição de capa persistida de um capítulo (formato aplicado + se há original). */
+export interface CoverEdit {
+  kind: string
+  label: string
+  width: number
+  height: number
+  hasOriginal: boolean
+}
+
+/** Capítulo lido da pasta em disco (editor "Ver & Editar"). */
 export interface TreeChapter {
   /** Nome da pasta, ex.: "Cap 5". */
   folder: string
@@ -314,6 +335,8 @@ export interface TreeChapter {
   pages: number
   /** 1ª imagem (miniatura), "" se vazio. */
   firstPage: string
+  /** Formato de capa aplicado (ausente = capa original intacta). */
+  cover?: CoverEdit
 }
 
 /** Volume lido da pasta em disco. */
@@ -541,6 +564,8 @@ export const api = {
       mode: 'insert' | 'replace'
       width?: number
       height?: number
+      formatKind?: string
+      formatLabel?: string
     },
   ) =>
     req<MangaTree>(`/downloads/${encodeURIComponent(jobId)}/tree/cover`, {
@@ -553,10 +578,26 @@ export const api = {
    */
   formatCovers: (
     jobId: string,
-    body: { width: number; height: number; volume?: string; chapter?: string },
+    body: {
+      width: number
+      height: number
+      volume?: string
+      chapter?: string
+      formatKind?: string
+      formatLabel?: string
+    },
   ) =>
     req<MangaTree>(
       `/downloads/${encodeURIComponent(jobId)}/tree/covers/format`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  /** Volta a capa de um capítulo ao original guardado no SQLite. */
+  revertCover: (
+    jobId: string,
+    body: { volume: string; chapter: string },
+  ) =>
+    req<MangaTree>(
+      `/downloads/${encodeURIComponent(jobId)}/tree/cover/revert`,
       { method: 'POST', body: JSON.stringify(body) },
     ),
   /** Acrescenta uma imagem como nova última página de um capítulo. `image` é um data URL. */
@@ -614,6 +655,7 @@ export const api = {
     setCover: (b) => api.setCover(jobId, b),
     formatAllCovers: (b) => api.formatCovers(jobId, b),
     formatCover: (b) => api.formatCovers(jobId, b),
+    revertCover: (b) => api.revertCover(jobId, b),
     addPage: (b) => api.addPage(jobId, b),
     removeCover: (volume, chapter) => api.removeCover(jobId, volume, chapter),
     deleteTreePage: (b) => api.deleteTreePage(jobId, b),
@@ -666,6 +708,11 @@ export const api = {
       }),
     formatCover: (b) =>
       req<MangaTree>('/folder/tree/covers/format', {
+        method: 'POST',
+        body: JSON.stringify({ path, ...b }),
+      }),
+    revertCover: (b) =>
+      req<MangaTree>('/folder/tree/cover/revert', {
         method: 'POST',
         body: JSON.stringify({ path, ...b }),
       }),

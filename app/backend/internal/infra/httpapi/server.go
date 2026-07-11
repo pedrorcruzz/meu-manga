@@ -104,6 +104,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/downloads/{id}/tree/cover", s.putCover)
 	s.mux.HandleFunc("DELETE /api/downloads/{id}/tree/cover", s.deleteCover)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/covers/format", s.formatCovers)
+	s.mux.HandleFunc("POST /api/downloads/{id}/tree/cover/revert", s.revertCover)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/add", s.addTreePage)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/delete", s.deleteTreePage)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/reorder", s.reorderPages)
@@ -119,6 +120,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/folder/tree/cover", s.folderPutCover)
 	s.mux.HandleFunc("DELETE /api/folder/tree/cover", s.folderDeleteCover)
 	s.mux.HandleFunc("POST /api/folder/tree/covers/format", s.folderFormatCovers)
+	s.mux.HandleFunc("POST /api/folder/tree/cover/revert", s.folderRevertCover)
 	s.mux.HandleFunc("POST /api/folder/tree/page/add", s.folderAddPage)
 	s.mux.HandleFunc("POST /api/folder/tree/page/delete", s.folderDeletePage)
 	s.mux.HandleFunc("POST /api/folder/tree/page/reorder", s.folderReorderPages)
@@ -259,12 +261,14 @@ func (s *Server) renameChapter(w http.ResponseWriter, r *http.Request) {
 }
 
 type coverReq struct {
-	Volume  string `json:"volume"`
-	Chapter string `json:"chapter"` // pasta do capítulo ("" = capa do volume, 1º capítulo)
-	Image   string `json:"image"`   // data URL (qualquer formato); convertido para JPEG
-	Mode    string `json:"mode"`    // "insert" (adicionar, empurra páginas) | "replace" (trocar)
-	Width   int    `json:"width"`   // redimensiona para width×height; 0 = mantém original
-	Height  int    `json:"height"`
+	Volume      string `json:"volume"`
+	Chapter     string `json:"chapter"`     // pasta do capítulo ("" = capa do volume, 1º capítulo)
+	Image       string `json:"image"`       // data URL (qualquer formato); convertido para JPEG
+	Mode        string `json:"mode"`        // "insert" (adicionar, empurra páginas) | "replace" (trocar)
+	Width       int    `json:"width"`       // redimensiona para width×height; 0 = mantém original
+	Height      int    `json:"height"`
+	FormatKind  string `json:"formatKind"`  // "original" | "kindle" | "custom" (para persistir)
+	FormatLabel string `json:"formatLabel"` // rótulo amigável do formato aplicado
 }
 
 // putCover adiciona ou troca a 001.jpg do alvo: sem chapter é a capa do volume
@@ -280,7 +284,7 @@ func (s *Server) putCover(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid image")
 		return
 	}
-	tree, err := s.deps.Editor.SetCover(r.PathValue("id"), req.Volume, req.Chapter, jpeg, req.Mode != "replace")
+	tree, err := s.deps.Editor.SetCover(r.PathValue("id"), req.Volume, req.Chapter, jpeg, req.Mode != "replace", req.FormatKind, req.FormatLabel, req.Width, req.Height)
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -310,10 +314,12 @@ func (s *Server) addTreePage(w http.ResponseWriter, r *http.Request) {
 }
 
 type formatReq struct {
-	Width   int    `json:"width"`
-	Height  int    `json:"height"`
-	Volume  string `json:"volume"`  // preenchido junto de Chapter = capa de UM capítulo
-	Chapter string `json:"chapter"` // "" = redimensiona a capa de TODOS os volumes
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	Volume      string `json:"volume"`      // preenchido junto de Chapter = capa de UM capítulo
+	Chapter     string `json:"chapter"`     // "" = redimensiona a capa de TODOS os volumes
+	FormatKind  string `json:"formatKind"`  // "kindle" | "custom" (para persistir)
+	FormatLabel string `json:"formatLabel"` // rótulo amigável do formato aplicado
 }
 
 // formatCovers redimensiona capas para width×height: com Chapter, só a capa
@@ -328,10 +334,30 @@ func (s *Server) formatCovers(w http.ResponseWriter, r *http.Request) {
 	var tree domain.MangaTree
 	var err error
 	if req.Chapter != "" {
-		tree, err = s.deps.Editor.FormatCover(id, req.Volume, req.Chapter, req.Width, req.Height)
+		tree, err = s.deps.Editor.FormatCover(id, req.Volume, req.Chapter, req.FormatKind, req.FormatLabel, req.Width, req.Height)
 	} else {
-		tree, err = s.deps.Editor.FormatCovers(id, req.Width, req.Height)
+		tree, err = s.deps.Editor.FormatCovers(id, req.FormatKind, req.FormatLabel, req.Width, req.Height)
 	}
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+type revertReq struct {
+	Volume  string `json:"volume"`
+	Chapter string `json:"chapter"`
+}
+
+// revertCover volta a capa de um capítulo ao original guardado no SQLite.
+func (s *Server) revertCover(w http.ResponseWriter, r *http.Request) {
+	var req revertReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.Editor.RevertCover(r.PathValue("id"), req.Volume, req.Chapter)
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -499,13 +525,15 @@ func (s *Server) folderRename(w http.ResponseWriter, r *http.Request) {
 }
 
 type folderCoverReq struct {
-	Path    string `json:"path"`
-	Volume  string `json:"volume"`
-	Chapter string `json:"chapter"` // pasta do capítulo ("" = capa do volume, 1º capítulo)
-	Image   string `json:"image"`
-	Mode    string `json:"mode"`
-	Width   int    `json:"width"` // redimensiona para width×height; 0 = mantém original
-	Height  int    `json:"height"`
+	Path        string `json:"path"`
+	Volume      string `json:"volume"`
+	Chapter     string `json:"chapter"` // pasta do capítulo ("" = capa do volume, 1º capítulo)
+	Image       string `json:"image"`
+	Mode        string `json:"mode"`
+	Width       int    `json:"width"` // redimensiona para width×height; 0 = mantém original
+	Height      int    `json:"height"`
+	FormatKind  string `json:"formatKind"`
+	FormatLabel string `json:"formatLabel"`
 }
 
 func (s *Server) folderPutCover(w http.ResponseWriter, r *http.Request) {
@@ -519,7 +547,7 @@ func (s *Server) folderPutCover(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid image")
 		return
 	}
-	tree, err := s.deps.FolderEditor.SetCover(req.Path, req.Volume, req.Chapter, jpeg, req.Mode != "replace")
+	tree, err := s.deps.FolderEditor.SetCover(req.Path, req.Volume, req.Chapter, jpeg, req.Mode != "replace", req.FormatKind, req.FormatLabel, req.Width, req.Height)
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -548,11 +576,13 @@ func (s *Server) folderAddPage(w http.ResponseWriter, r *http.Request) {
 }
 
 type folderFormatReq struct {
-	Path    string `json:"path"`
-	Width   int    `json:"width"`
-	Height  int    `json:"height"`
-	Volume  string `json:"volume"`  // preenchido junto de Chapter = capa de UM capítulo
-	Chapter string `json:"chapter"` // "" = redimensiona a capa de TODOS os volumes
+	Path        string `json:"path"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	Volume      string `json:"volume"`  // preenchido junto de Chapter = capa de UM capítulo
+	Chapter     string `json:"chapter"` // "" = redimensiona a capa de TODOS os volumes
+	FormatKind  string `json:"formatKind"`
+	FormatLabel string `json:"formatLabel"`
 }
 
 // folderFormatCovers redimensiona capas na pasta escolhida: com Chapter, só a
@@ -566,10 +596,31 @@ func (s *Server) folderFormatCovers(w http.ResponseWriter, r *http.Request) {
 	var tree domain.MangaTree
 	var err error
 	if req.Chapter != "" {
-		tree, err = s.deps.FolderEditor.FormatCover(req.Path, req.Volume, req.Chapter, req.Width, req.Height)
+		tree, err = s.deps.FolderEditor.FormatCover(req.Path, req.Volume, req.Chapter, req.FormatKind, req.FormatLabel, req.Width, req.Height)
 	} else {
-		tree, err = s.deps.FolderEditor.FormatCovers(req.Path, req.Width, req.Height)
+		tree, err = s.deps.FolderEditor.FormatCovers(req.Path, req.FormatKind, req.FormatLabel, req.Width, req.Height)
 	}
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+type folderRevertReq struct {
+	Path    string `json:"path"`
+	Volume  string `json:"volume"`
+	Chapter string `json:"chapter"`
+}
+
+// folderRevertCover volta a capa de um capítulo ao original guardado.
+func (s *Server) folderRevertCover(w http.ResponseWriter, r *http.Request) {
+	var req folderRevertReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.FolderEditor.RevertCover(req.Path, req.Volume, req.Chapter)
 	if err != nil {
 		writeUseErr(w, err)
 		return

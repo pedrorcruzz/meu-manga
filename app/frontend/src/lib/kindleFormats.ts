@@ -85,6 +85,27 @@ export function presetLabel(p: KindlePreset): string {
   return `${p.name} (${p.width}×${p.height})`
 }
 
+/** Metadados do formato para persistir/exibir (kind + rótulo + dimensões). */
+export interface FormatMeta {
+  kind: 'original' | 'kindle' | 'custom'
+  label: string
+  width: number
+  height: number
+}
+
+/** Deriva os metadados persistíveis de um formato escolhido. */
+export function formatMeta(f: CoverFormat): FormatMeta {
+  if (f.kind === 'original') return { kind: 'original', label: 'Original', width: 0, height: 0 }
+  if (f.kind === 'kindle')
+    return { kind: 'kindle', label: f.label, width: f.width, height: f.height }
+  return {
+    kind: 'custom',
+    label: `Personalizado ${f.width}×${f.height}`,
+    width: f.width,
+    height: f.height,
+  }
+}
+
 /** Normaliza texto para busca (minúsculo, sem acentos). */
 function norm(s: string): string {
   return s

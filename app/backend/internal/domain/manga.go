@@ -45,10 +45,22 @@ type ChapterList struct {
 
 // ChapterNode é um capítulo lido do disco (pasta "Cap N").
 type ChapterNode struct {
-	Folder    string `json:"folder"`    // nome da pasta, ex.: "Cap 5"
-	Number    string `json:"number"`    // número, ex.: "5" (de "Cap 5")
-	Pages     int    `json:"pages"`     // imagens no disco
-	FirstPage string `json:"firstPage"` // 1ª imagem (para thumb), "" se vazio
+	Folder    string     `json:"folder"`          // nome da pasta, ex.: "Cap 5"
+	Number    string     `json:"number"`          // número, ex.: "5" (de "Cap 5")
+	Pages     int        `json:"pages"`           // imagens no disco
+	FirstPage string     `json:"firstPage"`       // 1ª imagem (para thumb), "" se vazio
+	Cover     *CoverEdit `json:"cover,omitempty"` // edição de capa persistida (nil = original intacta)
+}
+
+// CoverEdit é a edição de capa persistida de um capítulo: o formato aplicado
+// (para o usuário ver que a capa foi alterada e qual formato foi usado) e se há
+// uma capa original guardada para reverter.
+type CoverEdit struct {
+	Kind        string `json:"kind"`  // "original" | "kindle" | "custom"
+	Label       string `json:"label"` // rótulo amigável, ex.: "Kindle … (1264×1680)"
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	HasOriginal bool   `json:"hasOriginal"` // há bytes originais para "voltar ao original"
 }
 
 // VolumeNode é um volume lido do disco (subpasta "<manga> <volume>").

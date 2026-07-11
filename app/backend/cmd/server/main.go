@@ -88,13 +88,13 @@ func main() {
 	settings.RestoreDownloadDir()
 	// editor "Consertar volumes": lê/edita a pasta em disco (mesmo store), com
 	// guard contra corrida com downloads em andamento (via o registro de jobs).
-	editor := usecase.NewMangaEditor(store, downloader)
+	editor := usecase.NewMangaEditor(store, downloader, history)
 	// editor "Consertar da pasta": mesma lógica folder-first, mas sobre uma pasta
 	// de mangá escolhida em qualquer lugar do disco (ex.: obra já movida para um
 	// SSD externo). Cada operação usa um store efêmero enraizado no pai da pasta.
 	folderEditor := usecase.NewFolderEditor(func(root string) usecase.EditStore {
 		return storage.New(root)
-	}, downloader)
+	}, downloader, history)
 
 	// sonda leve: bate no endpoint de busca e confere 200 (sessão realmente passa o CF)
 	probe := func(ctx context.Context) bool {
