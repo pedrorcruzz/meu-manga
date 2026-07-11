@@ -669,10 +669,10 @@ function PendingVolumesPanel({
 
   return (
     <>
-    <div className="flex flex-col gap-3 rounded-xl border border-violet-800/40 bg-violet-950/20 p-4 lg:h-full lg:min-h-0">
+    <div className="flex flex-col gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-4 lg:h-full lg:min-h-0">
       {/* Cabeçalho */}
       <div className="flex flex-wrap items-center gap-3">
-        <Layers size={16} className="text-violet-300" aria-hidden="true" />
+        <Layers size={16} className="text-neutral-400" aria-hidden="true" />
         <div className="min-w-0">
           <p className="text-sm font-semibold text-neutral-100">
             Volumes prontos para baixar
@@ -1560,7 +1560,7 @@ function MangaCard({
       >
         <BookOpen
           size={16}
-          className="shrink-0 text-violet-300"
+          className="shrink-0 text-neutral-400"
           aria-hidden="true"
         />
         <div className="min-w-0 flex-1 overflow-hidden">
@@ -1632,7 +1632,7 @@ function MangaCard({
             <div className="flex items-center gap-3 border-b border-neutral-800 p-4">
               <BookOpen
                 size={18}
-                className="shrink-0 text-violet-300"
+                className="shrink-0 text-neutral-400"
                 aria-hidden="true"
               />
               <div className="min-w-0 flex-1">

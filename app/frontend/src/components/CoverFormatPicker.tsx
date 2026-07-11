@@ -95,11 +95,66 @@ export function CoverFormatPicker({
         </span>
       </button>
 
-      {/* Kindle */}
+      {/* Personalizado (em cima: funciona para qualquer aparelho, não só Kindle) */}
+      <div
+        className={`rounded-lg border px-3 py-2.5 ${
+          customActive ? 'border-violet-500/60 bg-violet-600/10' : 'border-neutral-800 bg-neutral-900'
+        }`}
+      >
+        <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-500">
+          Personalizado
+        </p>
+        <p className="mb-2 text-[11px] leading-snug text-neutral-500">
+          Escolha qualquer largura×altura, em pixels — serve para qualquer
+          aparelho (tablet, celular, e-reader), não só Kindle.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-neutral-400">
+            L
+            <input
+              type="text"
+              inputMode="numeric"
+              value={cw}
+              onChange={(e) => onCustomWidth(e.target.value)}
+              placeholder="largura"
+              className="w-20 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-center text-xs focus:border-neutral-500 focus:outline-none"
+              aria-label="Largura personalizada"
+            />
+          </label>
+          <span className="text-neutral-600">×</span>
+          <label className="flex items-center gap-1.5 text-xs text-neutral-400">
+            A
+            <input
+              type="text"
+              inputMode="numeric"
+              value={ch}
+              onChange={(e) => onCustomHeight(e.target.value)}
+              placeholder="altura"
+              className="w-20 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-center text-xs focus:border-neutral-500 focus:outline-none"
+              aria-label="Altura personalizada"
+            />
+          </label>
+          <span className="text-[11px] text-neutral-600">px</span>
+          {aspect && aspect > 0 && (
+            <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[11px] text-neutral-400">
+              <input
+                type="checkbox"
+                checked={lockRatio}
+                onChange={(e) => setLockRatio(e.target.checked)}
+                className="accent-violet-500"
+              />
+              manter proporção
+            </label>
+          )}
+        </div>
+      </div>
+
+      {/* Kindle (embaixo: atalhos com as resoluções das telas de Kindle) */}
       <div className="rounded-lg border border-neutral-800 bg-neutral-900">
         <div className="border-b border-neutral-800 px-3 py-2">
-          <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-neutral-500">
-            Kindle
+          <p className="mb-2 text-[11px] leading-snug text-neutral-400">
+            Se você usa <span className="font-medium text-neutral-200">Kindle</span>,
+            experimente esses (a resolução exata de cada tela):
           </p>
           <div className="relative">
             <Search
@@ -169,56 +224,6 @@ export function CoverFormatPicker({
             })
           )}
         </ul>
-      </div>
-
-      {/* Personalizado */}
-      <div
-        className={`rounded-lg border px-3 py-2.5 ${
-          customActive ? 'border-violet-500/60 bg-violet-600/10' : 'border-neutral-800 bg-neutral-900'
-        }`}
-      >
-        <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-neutral-500">
-          Personalizado
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-neutral-400">
-            L
-            <input
-              type="text"
-              inputMode="numeric"
-              value={cw}
-              onChange={(e) => onCustomWidth(e.target.value)}
-              placeholder="largura"
-              className="w-20 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-center text-xs focus:border-neutral-500 focus:outline-none"
-              aria-label="Largura personalizada"
-            />
-          </label>
-          <span className="text-neutral-600">×</span>
-          <label className="flex items-center gap-1.5 text-xs text-neutral-400">
-            A
-            <input
-              type="text"
-              inputMode="numeric"
-              value={ch}
-              onChange={(e) => onCustomHeight(e.target.value)}
-              placeholder="altura"
-              className="w-20 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-center text-xs focus:border-neutral-500 focus:outline-none"
-              aria-label="Altura personalizada"
-            />
-          </label>
-          <span className="text-[11px] text-neutral-600">px</span>
-          {aspect && aspect > 0 && (
-            <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-[11px] text-neutral-400">
-              <input
-                type="checkbox"
-                checked={lockRatio}
-                onChange={(e) => setLockRatio(e.target.checked)}
-                className="accent-violet-500"
-              />
-              manter proporção
-            </label>
-          )}
-        </div>
       </div>
     </div>
   )

@@ -12,6 +12,7 @@ import { ORIGINAL_FORMAT, formatDims, type CoverFormat } from '~/lib/kindleForma
 export function CoverFormatModal({
   title = 'Editar capa de todos os volumes',
   description,
+  previewUrl,
   busy,
   onApply,
   onClose,
@@ -20,6 +21,8 @@ export function CoverFormatModal({
   title?: string
   /** Texto explicativo do que será redimensionado. */
   description: ReactNode
+  /** Capa atual a exibir como prévia (mesma URL usada em downloads/Meus Mangás). */
+  previewUrl?: string
   busy?: boolean
   onApply: (b: { width: number; height: number }) => void
   onClose: () => void
@@ -54,6 +57,15 @@ export function CoverFormatModal({
         </div>
 
         <div className="flex flex-col gap-3 overflow-y-auto p-4">
+          {previewUrl && (
+            <div className="flex justify-center">
+              <img
+                src={previewUrl}
+                alt="Capa atual"
+                className="h-40 w-auto rounded-lg border border-neutral-800 object-contain"
+              />
+            </div>
+          )}
           <p className="text-xs leading-snug text-neutral-500">{description}</p>
           <CoverFormatPicker value={format} onChange={setFormat} />
         </div>

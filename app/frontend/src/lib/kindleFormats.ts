@@ -12,33 +12,53 @@ export interface KindlePreset {
   height: number
 }
 
-/** Presets de Kindle em ordem cronológica (o mais recente no fim). */
+/**
+ * Presets de Kindle, um por RESOLUÇÃO (modelos de mesma largura×altura viram uma
+ * opção só, com os nomes listados no rótulo). Ordenados por resolução crescente.
+ */
 export const KINDLE_PRESETS: KindlePreset[] = [
-  { id: 'kindle-1-2007', name: 'Kindle (1ª geração, 2007)', width: 600, height: 800 },
-  { id: 'kindle-2-2009', name: 'Kindle 2 (2ª geração, 2009)', width: 600, height: 800 },
-  { id: 'kindle-dx', name: 'Kindle DX / DX Graphite', width: 824, height: 1200 },
-  { id: 'kindle-keyboard-2010', name: 'Kindle Keyboard (3ª geração, 2010)', width: 600, height: 800 },
-  { id: 'kindle-4-2011', name: 'Kindle 4 (2011)', width: 600, height: 800 },
-  { id: 'kindle-touch-2011', name: 'Kindle Touch (4ª geração, 2011)', width: 600, height: 800 },
-  { id: 'kindle-5-2012', name: 'Kindle 5 (2012)', width: 600, height: 800 },
-  { id: 'kindle-pw1-2012', name: 'Kindle Paperwhite 1 (5ª geração, 2012)', width: 758, height: 1024 },
-  { id: 'kindle-pw2-2013', name: 'Kindle Paperwhite 2 (6ª geração, 2013)', width: 758, height: 1024 },
-  { id: 'kindle-voyage-2014', name: 'Kindle Voyage (7ª geração, 2014)', width: 1072, height: 1448 },
-  { id: 'kindle-pw3-2015', name: 'Kindle Paperwhite 3 (7ª geração, 2015)', width: 1072, height: 1448 },
-  { id: 'kindle-oasis-2016', name: 'Kindle Oasis (8ª geração, 2016)', width: 1072, height: 1448 },
-  { id: 'kindle-oasis2-2017', name: 'Kindle Oasis 2 (9ª geração, 2017)', width: 1264, height: 1680 },
-  { id: 'kindle-pw4-2018', name: 'Kindle Paperwhite 4 (10ª geração, 2018)', width: 1072, height: 1448 },
-  { id: 'kindle-10-2019', name: 'Kindle (10ª geração, 2019)', width: 600, height: 800 },
-  { id: 'kindle-oasis3-2019', name: 'Kindle Oasis 3 (10ª geração, 2019)', width: 1264, height: 1680 },
-  { id: 'kindle-pw5-2021', name: 'Kindle Paperwhite 5 (11ª geração, 2021)', width: 1236, height: 1648 },
-  { id: 'kindle-pw-signature-2021', name: 'Kindle Paperwhite Signature Edition (11ª geração, 2021)', width: 1236, height: 1648 },
-  { id: 'kindle-11-2022', name: 'Kindle (11ª geração, 2022)', width: 1072, height: 1448 },
-  { id: 'kindle-scribe-2022', name: 'Kindle Scribe (2022)', width: 1860, height: 2480 },
-  { id: 'kindle-pw-2024', name: 'Kindle Paperwhite (12ª geração, 2024)', width: 1264, height: 1680 },
-  { id: 'kindle-pw-signature-2024', name: 'Kindle Paperwhite Signature Edition (12ª geração, 2024)', width: 1264, height: 1680 },
-  { id: 'kindle-colorsoft', name: 'Kindle Colorsoft', width: 1264, height: 1680 },
-  { id: 'kindle-colorsoft-signature', name: 'Kindle Colorsoft Signature Edition', width: 1264, height: 1680 },
-  { id: 'kindle-scribe-2024', name: 'Kindle Scribe (2024)', width: 1860, height: 2480 },
+  {
+    id: 'kindle-600x800',
+    name: 'Kindle básico, Keyboard e Touch (1ª–4ª ger. e 2019)',
+    width: 600,
+    height: 800,
+  },
+  {
+    id: 'kindle-758x1024',
+    name: 'Kindle Paperwhite 1 e 2 (2012–2013)',
+    width: 758,
+    height: 1024,
+  },
+  {
+    id: 'kindle-824x1200',
+    name: 'Kindle DX / DX Graphite',
+    width: 824,
+    height: 1200,
+  },
+  {
+    id: 'kindle-1072x1448',
+    name: 'Kindle Voyage, Paperwhite 3 e 4, Oasis 1 e Kindle 2022',
+    width: 1072,
+    height: 1448,
+  },
+  {
+    id: 'kindle-1236x1648',
+    name: 'Kindle Paperwhite 5 e Signature Edition (2021)',
+    width: 1236,
+    height: 1648,
+  },
+  {
+    id: 'kindle-1264x1680',
+    name: 'Kindle Colorsoft, Paperwhite (2024) e Oasis 2 e 3',
+    width: 1264,
+    height: 1680,
+  },
+  {
+    id: 'kindle-1860x2480',
+    name: 'Kindle Scribe (2022 e 2024)',
+    width: 1860,
+    height: 2480,
+  },
 ]
 
 /** Formato escolhido para a capa. */
