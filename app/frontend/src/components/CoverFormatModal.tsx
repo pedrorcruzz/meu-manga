@@ -1,21 +1,25 @@
-// Popup da ação em massa "Editar capa": mostra SÓ o seletor de formato (Kindle /
-// Personalizado) e, ao aplicar, redimensiona a capa de TODOS os volumes de uma
-// vez (a capa é sempre a 1ª página do 1º capítulo de cada volume). "Original" não
-// muda nada, então o botão de aplicar fica desabilitado nesse caso.
+// Popup "Editar capa": mostra SÓ o seletor de formato (Kindle / Personalizado) e,
+// ao aplicar, redimensiona a(s) capa(s) existente(s) para o formato escolhido —
+// serve tanto para a ação em massa (todos os volumes) quanto para um capítulo
+// específico. "Original" não muda nada, então o botão de aplicar fica
+// desabilitado nesse caso.
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Loader2, Wand2, X } from 'lucide-react'
 import { CoverFormatPicker } from '~/components/CoverFormatPicker'
 import { ORIGINAL_FORMAT, formatDims, type CoverFormat } from '~/lib/kindleFormats'
 
 export function CoverFormatModal({
-  volumeCount,
+  title = 'Editar capa de todos os volumes',
+  description,
   busy,
   onApply,
   onClose,
 }: {
-  /** Quantos volumes serão afetados (para o texto de confirmação). */
-  volumeCount: number
+  /** Título do cabeçalho. */
+  title?: string
+  /** Texto explicativo do que será redimensionado. */
+  description: ReactNode
   busy?: boolean
   onApply: (b: { width: number; height: number }) => void
   onClose: () => void
@@ -27,7 +31,7 @@ export function CoverFormatModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Editar capa de todos os volumes"
+      aria-label={title}
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget && !busy) onClose()
@@ -37,7 +41,7 @@ export function CoverFormatModal({
         <div className="flex items-center justify-between border-b border-neutral-800 p-4">
           <h2 className="flex items-center gap-2 font-semibold text-neutral-100">
             <Wand2 size={16} className="text-neutral-400" aria-hidden="true" />
-            Editar capa de todos os volumes
+            {title}
           </h2>
           <button
             onClick={onClose}
@@ -50,12 +54,7 @@ export function CoverFormatModal({
         </div>
 
         <div className="flex flex-col gap-3 overflow-y-auto p-4">
-          <p className="text-xs leading-snug text-neutral-500">
-            Redimensiona a capa (1ª página do 1º capítulo) de{' '}
-            <span className="font-medium text-neutral-300">{volumeCount}</span>{' '}
-            {volumeCount === 1 ? 'volume' : 'volumes'} para o formato escolhido,
-            com qualidade alta. "Original" mantém tudo como está.
-          </p>
+          <p className="text-xs leading-snug text-neutral-500">{description}</p>
           <CoverFormatPicker value={format} onChange={setFormat} />
         </div>
 

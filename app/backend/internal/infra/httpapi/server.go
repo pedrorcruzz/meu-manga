@@ -310,19 +310,28 @@ func (s *Server) addTreePage(w http.ResponseWriter, r *http.Request) {
 }
 
 type formatReq struct {
-	Width  int `json:"width"`
-	Height int `json:"height"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Volume  string `json:"volume"`  // preenchido junto de Chapter = capa de UM capítulo
+	Chapter string `json:"chapter"` // "" = redimensiona a capa de TODOS os volumes
 }
 
-// formatCovers redimensiona a capa (1ª pág. do 1º cap.) de TODOS os volumes da
-// obra para width×height de uma vez.
+// formatCovers redimensiona capas para width×height: com Chapter, só a capa
+// daquele capítulo; sem Chapter, a capa (1ª pág. do 1º cap.) de TODOS os volumes.
 func (s *Server) formatCovers(w http.ResponseWriter, r *http.Request) {
 	var req formatReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Width <= 0 || req.Height <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	tree, err := s.deps.Editor.FormatCovers(r.PathValue("id"), req.Width, req.Height)
+	id := r.PathValue("id")
+	var tree domain.MangaTree
+	var err error
+	if req.Chapter != "" {
+		tree, err = s.deps.Editor.FormatCover(id, req.Volume, req.Chapter, req.Width, req.Height)
+	} else {
+		tree, err = s.deps.Editor.FormatCovers(id, req.Width, req.Height)
+	}
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -539,19 +548,28 @@ func (s *Server) folderAddPage(w http.ResponseWriter, r *http.Request) {
 }
 
 type folderFormatReq struct {
-	Path   string `json:"path"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
+	Path    string `json:"path"`
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+	Volume  string `json:"volume"`  // preenchido junto de Chapter = capa de UM capítulo
+	Chapter string `json:"chapter"` // "" = redimensiona a capa de TODOS os volumes
 }
 
-// folderFormatCovers redimensiona a capa de TODOS os volumes da pasta escolhida.
+// folderFormatCovers redimensiona capas na pasta escolhida: com Chapter, só a
+// capa daquele capítulo; sem Chapter, a de TODOS os volumes.
 func (s *Server) folderFormatCovers(w http.ResponseWriter, r *http.Request) {
 	var req folderFormatReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Width <= 0 || req.Height <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	tree, err := s.deps.FolderEditor.FormatCovers(req.Path, req.Width, req.Height)
+	var tree domain.MangaTree
+	var err error
+	if req.Chapter != "" {
+		tree, err = s.deps.FolderEditor.FormatCover(req.Path, req.Volume, req.Chapter, req.Width, req.Height)
+	} else {
+		tree, err = s.deps.FolderEditor.FormatCovers(req.Path, req.Width, req.Height)
+	}
 	if err != nil {
 		writeUseErr(w, err)
 		return

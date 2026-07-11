@@ -11,6 +11,7 @@ type EditStore interface {
 	MoveChapter(manga, fromVol, toVol, chapterFolder string) error
 	RenameChapter(manga, volFolder, oldNumber, newNumber string) error
 	SetCover(manga, volFolder, chapterFolder string, jpeg []byte, insert bool) error
+	FormatCover(manga, volFolder, chapterFolder string, width, height int) error
 	FormatCovers(manga string, width, height int) error
 	AddPage(manga, volFolder, chapterFolder string, jpeg []byte) error
 	RemoveCover(manga, volFolder, chapterFolder string) error
@@ -89,6 +90,19 @@ func (e *MangaEditor) SetCover(jobID, volFolder, chapterFolder string, jpeg []by
 		return domain.MangaTree{}, err
 	}
 	if err := e.store.SetCover(title, volFolder, chapterFolder, jpeg, insert); err != nil {
+		return domain.MangaTree{}, err
+	}
+	return e.store.ScanManga(title)
+}
+
+// FormatCover redimensiona a capa (1ª pág.) de UM capítulo-alvo para width×height
+// e devolve a árvore atualizada.
+func (e *MangaEditor) FormatCover(jobID, volFolder, chapterFolder string, width, height int) (domain.MangaTree, error) {
+	title, err := e.guard(jobID)
+	if err != nil {
+		return domain.MangaTree{}, err
+	}
+	if err := e.store.FormatCover(title, volFolder, chapterFolder, width, height); err != nil {
 		return domain.MangaTree{}, err
 	}
 	return e.store.ScanManga(title)

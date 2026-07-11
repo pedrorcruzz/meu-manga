@@ -78,13 +78,13 @@ export function CoverFormatPicker({
         onClick={() => onChange({ kind: 'original' })}
         className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
           value.kind === 'original'
-            ? 'border-violet-500/60 bg-violet-600/15 text-violet-100'
+            ? 'border-neutral-600 bg-neutral-800 text-neutral-100'
             : 'border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-600'
         }`}
       >
         <Check
           size={15}
-          className={`shrink-0 ${value.kind === 'original' ? 'opacity-100 text-violet-300' : 'opacity-0'}`}
+          className={`shrink-0 ${value.kind === 'original' ? 'opacity-100' : 'opacity-0'}`}
           aria-hidden="true"
         />
         <span className="min-w-0">

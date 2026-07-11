@@ -519,6 +519,36 @@ func (s *Store) SetCover(manga, volFolder, chapterFolder string, jpeg []byte, in
 	return os.WriteFile(filepath.Join(dir, "001.jpg"), jpeg, 0o644)
 }
 
+// FormatCover redimensiona a capa (1ª página) de UM capítulo-alvo para
+// width×height, mantendo alta qualidade. Serve para quando o mangá já veio com
+// capa e só se quer ajustar o tamanho, sem subir imagem nova. chapterFolder
+// vazio = capa do volume (1º capítulo). width/height <= 0 é no-op.
+func (s *Store) FormatCover(manga, volFolder, chapterFolder string, width, height int) error {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	dir, err := s.coverChapterDir(manga, volFolder, chapterFolder)
+	if err != nil {
+		return err
+	}
+	if err := renumber(dir); err != nil {
+		return err
+	}
+	cover := filepath.Join(dir, "001.jpg")
+	data, err := os.ReadFile(cover)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return domain.ErrNoCover
+		}
+		return err
+	}
+	out, err := imageconv.ToJPEGSized(data, width, height)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cover, out, 0o644)
+}
+
 // FormatCovers redimensiona a capa (1ª página do 1º capítulo) de TODOS os
 // volumes da obra para width×height, mantendo alta qualidade (ToJPEGSized). É a
 // versão em massa do "editar capa": a capa de cada volume é sempre a 001.jpg do

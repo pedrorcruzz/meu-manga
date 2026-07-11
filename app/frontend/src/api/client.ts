@@ -268,6 +268,16 @@ export interface TreeEditorApi {
    * de uma vez. Devolve a árvore atualizada.
    */
   formatAllCovers: (b: { width: number; height: number }) => Promise<MangaTree>
+  /**
+   * Redimensiona a capa (1ª pág.) já existente de UM capítulo para width×height —
+   * útil quando o mangá já veio com capa. Devolve a árvore atualizada.
+   */
+  formatCover: (b: {
+    volume: string
+    chapter: string
+    width: number
+    height: number
+  }) => Promise<MangaTree>
   /** Acrescenta uma imagem como nova última página de um capítulo. `image` é um data URL. */
   addPage: (b: {
     volume: string
@@ -537,8 +547,14 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
-  /** Redimensiona a capa de todos os volumes da obra para width×height. */
-  formatCovers: (jobId: string, body: { width: number; height: number }) =>
+  /**
+   * Redimensiona capas para width×height. Com `chapter`, só a capa daquele
+   * capítulo; sem `chapter`, a capa de todos os volumes da obra.
+   */
+  formatCovers: (
+    jobId: string,
+    body: { width: number; height: number; volume?: string; chapter?: string },
+  ) =>
     req<MangaTree>(
       `/downloads/${encodeURIComponent(jobId)}/tree/covers/format`,
       { method: 'POST', body: JSON.stringify(body) },
@@ -597,6 +613,7 @@ export const api = {
     renameChapter: (b) => api.renameChapter(jobId, b),
     setCover: (b) => api.setCover(jobId, b),
     formatAllCovers: (b) => api.formatCovers(jobId, b),
+    formatCover: (b) => api.formatCovers(jobId, b),
     addPage: (b) => api.addPage(jobId, b),
     removeCover: (volume, chapter) => api.removeCover(jobId, volume, chapter),
     deleteTreePage: (b) => api.deleteTreePage(jobId, b),
@@ -643,6 +660,11 @@ export const api = {
         body: JSON.stringify({ path, ...b }),
       }),
     formatAllCovers: (b) =>
+      req<MangaTree>('/folder/tree/covers/format', {
+        method: 'POST',
+        body: JSON.stringify({ path, ...b }),
+      }),
+    formatCover: (b) =>
       req<MangaTree>('/folder/tree/covers/format', {
         method: 'POST',
         body: JSON.stringify({ path, ...b }),
