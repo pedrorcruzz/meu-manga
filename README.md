@@ -21,10 +21,11 @@
 |  |  |
 |:--:|:--:|
 | ![Home](docs/screenshots/home.png) | ![Meus Mangás](docs/screenshots/biblioteca.png) |
-| ![Ver & Editar volumes](docs/screenshots/ver-editar.png) | ![Downloads](docs/screenshots/downloads.png) |
+| ![Revisar e baixar](docs/screenshots/revisar-baixar.png) | ![Ver & Editar volumes](docs/screenshots/ver-editar.png) |
+| ![Editar capa por formato](docs/screenshots/capa-formato.png) | ![Downloads](docs/screenshots/downloads.png) |
 
 <p align="center">
-  <img src="docs/screenshots/capa-formato.png" alt="Seletor de formato da capa — presets de Kindle (busca por modelo) e tamanho personalizado, com resize de alta qualidade" width="760" />
+  <img src="docs/screenshots/preview-capitulos.png" alt="Preview das páginas de um capítulo, com as ações de capa e páginas" width="760" />
 </p>
 
 <br>
