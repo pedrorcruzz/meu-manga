@@ -103,6 +103,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/rename", s.renameChapter)
 	s.mux.HandleFunc("PUT /api/downloads/{id}/tree/cover", s.putCover)
 	s.mux.HandleFunc("DELETE /api/downloads/{id}/tree/cover", s.deleteCover)
+	s.mux.HandleFunc("POST /api/downloads/{id}/tree/covers/format", s.formatCovers)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/add", s.addTreePage)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/delete", s.deleteTreePage)
 	s.mux.HandleFunc("POST /api/downloads/{id}/tree/page/reorder", s.reorderPages)
@@ -117,6 +118,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/folder/tree/rename", s.folderRename)
 	s.mux.HandleFunc("PUT /api/folder/tree/cover", s.folderPutCover)
 	s.mux.HandleFunc("DELETE /api/folder/tree/cover", s.folderDeleteCover)
+	s.mux.HandleFunc("POST /api/folder/tree/covers/format", s.folderFormatCovers)
 	s.mux.HandleFunc("POST /api/folder/tree/page/add", s.folderAddPage)
 	s.mux.HandleFunc("POST /api/folder/tree/page/delete", s.folderDeletePage)
 	s.mux.HandleFunc("POST /api/folder/tree/page/reorder", s.folderReorderPages)
@@ -261,6 +263,8 @@ type coverReq struct {
 	Chapter string `json:"chapter"` // pasta do capítulo ("" = capa do volume, 1º capítulo)
 	Image   string `json:"image"`   // data URL (qualquer formato); convertido para JPEG
 	Mode    string `json:"mode"`    // "insert" (adicionar, empurra páginas) | "replace" (trocar)
+	Width   int    `json:"width"`   // redimensiona para width×height; 0 = mantém original
+	Height  int    `json:"height"`
 }
 
 // putCover adiciona ou troca a 001.jpg do alvo: sem chapter é a capa do volume
@@ -271,7 +275,7 @@ func (s *Server) putCover(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	jpeg, err := decodeCover(req.Image)
+	jpeg, err := decodeCover(req.Image, req.Width, req.Height)
 	if err != nil || len(jpeg) == 0 {
 		writeError(w, http.StatusBadRequest, "invalid image")
 		return
@@ -292,12 +296,33 @@ func (s *Server) addTreePage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	jpeg, err := decodeCover(req.Image)
+	jpeg, err := decodeCover(req.Image, req.Width, req.Height)
 	if err != nil || len(jpeg) == 0 {
 		writeError(w, http.StatusBadRequest, "invalid image")
 		return
 	}
 	tree, err := s.deps.Editor.AddPage(r.PathValue("id"), req.Volume, req.Chapter, jpeg)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+type formatReq struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// formatCovers redimensiona a capa (1ª pág. do 1º cap.) de TODOS os volumes da
+// obra para width×height de uma vez.
+func (s *Server) formatCovers(w http.ResponseWriter, r *http.Request) {
+	var req formatReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Width <= 0 || req.Height <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.Editor.FormatCovers(r.PathValue("id"), req.Width, req.Height)
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -470,6 +495,8 @@ type folderCoverReq struct {
 	Chapter string `json:"chapter"` // pasta do capítulo ("" = capa do volume, 1º capítulo)
 	Image   string `json:"image"`
 	Mode    string `json:"mode"`
+	Width   int    `json:"width"` // redimensiona para width×height; 0 = mantém original
+	Height  int    `json:"height"`
 }
 
 func (s *Server) folderPutCover(w http.ResponseWriter, r *http.Request) {
@@ -478,7 +505,7 @@ func (s *Server) folderPutCover(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	jpeg, err := decodeCover(req.Image)
+	jpeg, err := decodeCover(req.Image, req.Width, req.Height)
 	if err != nil || len(jpeg) == 0 {
 		writeError(w, http.StatusBadRequest, "invalid image")
 		return
@@ -498,12 +525,33 @@ func (s *Server) folderAddPage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	jpeg, err := decodeCover(req.Image)
+	jpeg, err := decodeCover(req.Image, req.Width, req.Height)
 	if err != nil || len(jpeg) == 0 {
 		writeError(w, http.StatusBadRequest, "invalid image")
 		return
 	}
 	tree, err := s.deps.FolderEditor.AddPage(req.Path, req.Volume, req.Chapter, jpeg)
+	if err != nil {
+		writeUseErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tree)
+}
+
+type folderFormatReq struct {
+	Path   string `json:"path"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+}
+
+// folderFormatCovers redimensiona a capa de TODOS os volumes da pasta escolhida.
+func (s *Server) folderFormatCovers(w http.ResponseWriter, r *http.Request) {
+	var req folderFormatReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Width <= 0 || req.Height <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	tree, err := s.deps.FolderEditor.FormatCovers(req.Path, req.Width, req.Height)
 	if err != nil {
 		writeUseErr(w, err)
 		return
@@ -767,7 +815,7 @@ func (s *Server) enqueue(w http.ResponseWriter, r *http.Request) {
 			if len(v.Chapters) == 0 {
 				continue
 			}
-			cover, err := decodeCover(v.CoverImage)
+			cover, err := decodeCover(v.CoverImage, 0, 0)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, "invalid cover for "+v.Name)
 				return
@@ -791,8 +839,9 @@ func (s *Server) enqueue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": id})
 }
 
-// decodeCover decodifica um data URL de imagem e converte para JPEG.
-func decodeCover(dataURL string) ([]byte, error) {
+// decodeCover decodifica um data URL de imagem e converte para JPEG,
+// opcionalmente redimensionando para width×height (0 = mantém o tamanho original).
+func decodeCover(dataURL string, width, height int) ([]byte, error) {
 	if dataURL == "" {
 		return nil, nil
 	}
@@ -804,7 +853,7 @@ func decodeCover(dataURL string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return imageconv.ToJPEG(decoded)
+	return imageconv.ToJPEGSized(decoded, width, height)
 }
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {

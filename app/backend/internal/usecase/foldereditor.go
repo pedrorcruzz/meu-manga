@@ -94,6 +94,14 @@ func (e *FolderEditor) SetCover(path, volFolder, chapterFolder string, jpeg []by
 	})
 }
 
+// FormatCovers redimensiona a capa (1ª pág. do 1º cap.) de TODOS os volumes da
+// pasta escolhida para width×height e devolve a árvore atualizada.
+func (e *FolderEditor) FormatCovers(path string, width, height int) (domain.MangaTree, error) {
+	return e.mutate(path, func(st EditStore, manga string) error {
+		return st.FormatCovers(manga, width, height)
+	})
+}
+
 // AddPage acrescenta uma página ao final de um capítulo e devolve a árvore nova.
 func (e *FolderEditor) AddPage(path, volFolder, chapterFolder string, jpeg []byte) (domain.MangaTree, error) {
 	return e.mutate(path, func(st EditStore, manga string) error {

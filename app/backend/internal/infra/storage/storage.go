@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"meumanga/internal/domain"
+	"meumanga/internal/infra/imageconv"
 )
 
 // Store persists chapter pages under a root directory as ordered image files.
@@ -516,6 +517,43 @@ func (s *Store) SetCover(manga, volFolder, chapterFolder string, jpeg []byte, in
 		}
 	}
 	return os.WriteFile(filepath.Join(dir, "001.jpg"), jpeg, 0o644)
+}
+
+// FormatCovers redimensiona a capa (1ª página do 1º capítulo) de TODOS os
+// volumes da obra para width×height, mantendo alta qualidade (ToJPEGSized). É a
+// versão em massa do "editar capa": a capa de cada volume é sempre a 001.jpg do
+// seu 1º capítulo. Volumes sem capítulo/página são pulados. width/height <= 0 é
+// no-op (o "Original" do frontend nem chega aqui).
+func (s *Store) FormatCovers(manga string, width, height int) error {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+	tree, err := s.ScanManga(manga)
+	if err != nil {
+		return err
+	}
+	for _, vol := range tree.Volumes {
+		dir, err := s.coverChapterDir(manga, vol.Folder, "")
+		if err != nil {
+			continue // volume sem capítulo
+		}
+		if err := renumber(dir); err != nil {
+			return err
+		}
+		cover := filepath.Join(dir, "001.jpg")
+		data, err := os.ReadFile(cover)
+		if err != nil {
+			continue // volume sem páginas
+		}
+		out, err := imageconv.ToJPEGSized(data, width, height)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(cover, out, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // AddPage acrescenta uma nova página ao FINAL do capítulo (00N+1.jpg), sem
