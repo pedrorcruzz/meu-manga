@@ -76,17 +76,23 @@ export function CoverFormatPicker({
       <button
         type="button"
         onClick={() => onChange({ kind: 'original' })}
+        aria-pressed={value.kind === 'original'}
         className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
           value.kind === 'original'
-            ? 'border-neutral-600 bg-neutral-800 text-neutral-100'
-            : 'border-neutral-800 bg-neutral-900 text-neutral-300 hover:border-neutral-600'
+            ? 'border-violet-500/60 bg-violet-600/10 text-neutral-100'
+            : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:border-neutral-600'
         }`}
       >
-        <Check
-          size={15}
-          className={`shrink-0 ${value.kind === 'original' ? 'opacity-100' : 'opacity-0'}`}
+        <span
+          className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border transition-colors ${
+            value.kind === 'original'
+              ? 'border-violet-500 bg-violet-500 text-white'
+              : 'border-neutral-600 bg-transparent text-transparent'
+          }`}
           aria-hidden="true"
-        />
+        >
+          <Check size={11} strokeWidth={3} />
+        </span>
         <span className="min-w-0">
           <span className="font-medium">Original</span>
           <span className="ml-1.5 text-xs text-neutral-500">
